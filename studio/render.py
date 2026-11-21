@@ -313,9 +313,38 @@ def _render_in(work: Path, src: Path, out_dir: Path, name: str, start, end, layo
             _qsv_ok = False
     else:
         raise RuntimeError(f"Render failed: {err}")
-    cover_t = min(1.2, (end - start) / 2)
-    run(["ffmpeg", "-y", "-v", "error", "-ss", f"{cover_t:.2f}", "-i", f"{name}.mp4", "-frames:v", "1",
-         "-q:v", "3", f"{name}.jpg"], cwd=work)
+    dur = end - start
+    candidates = [t for t in [1.5, 2.5, 4.0, 6.0, 8.5] if t < max(1.2, dur - 1.0)]
+    if not candidates:
+        candidates = [max(0.5, dur / 3)]
+
+    best_frame, best_score = None, -1
+    for ct in candidates:
+        cand_jpg = work / f"cand_{ct:.1f}.jpg"
+        p = subprocess.run(["ffmpeg", "-y", "-v", "error", "-ss", f"{ct:.2f}", "-i", f"{name}.mp4",
+                            "-frames:v", "1", "-q:v", "2", str(cand_jpg)],
+                           cwd=work, capture_output=True, creationflags=NO_WINDOW)
+        if p.returncode == 0 and cand_jpg.is_file():
+            try:
+                from PIL import Image, ImageStat
+                with Image.open(cand_jpg) as img:
+                    stat = ImageStat.Stat(img)
+                    mean_b = sum(stat.mean[:3]) / 3.0
+                    std_b = sum(stat.stddev[:3]) / 3.0
+                    score = (mean_b * 1.5 + std_b * 2.0) if mean_b > 30 else mean_b * 0.2
+                    if score > best_score:
+                        best_score = score
+                        best_frame = cand_jpg
+            except Exception:
+                best_frame = cand_jpg
+                break
+
+    if best_frame and best_frame.is_file():
+        shutil.copyfile(str(best_frame), str(work / f"{name}.jpg"))
+    else:
+        cover_t = min(2.5, max(1.0, dur / 3))
+        run(["ffmpeg", "-y", "-v", "error", "-ss", f"{cover_t:.2f}", "-i", f"{name}.mp4", "-frames:v", "1",
+             "-q:v", "2", f"{name}.jpg"], cwd=work)
     for ext in ("mp4", "jpg", "ass"):
         shutil.move(str(work / f"{name}.{ext}"), str(out_dir / f"{name}.{ext}"))
     return {"file": f"{name}.mp4", "cover": f"{name}.jpg", "layout": layout}

@@ -64,8 +64,23 @@ def _next_slot(account_id, gap_min, cap):
     return t
 
 
+def _delete_clip_files(job, clip):
+    """Delete all file artifacts (.mp4, .jpg, .ass, .src.mp4) of an unused or discarded clip."""
+    try:
+        d = Path(job["dir"]) / "clips"
+        cid = clip["id"]
+        for ext in ("mp4", "jpg", "ass", "src.mp4"):
+            (d / f"{cid}.{ext}").unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
 def enqueue(job, clip, account_ids, now=False) -> list:
     c = creators.get(job["creator"]) or creators.DEFAULTS
+    threshold = max(90, int(c.get("post_min_score", 90)))
+    score = int(clip.get("score") or 0)
+    if score < threshold:
+        return []
     made = []
     with _lock:
         for aid in account_ids:
@@ -91,13 +106,20 @@ def enqueue(job, clip, account_ids, now=False) -> list:
 def on_clip_ready(job, clip):
     """Called once when a clip first finishes rendering."""
     c = creators.get(job["creator"])
-    if not c or not c["autopost"] or not c["accounts"]:
+    if not c or not c.get("autopost") or not c.get("accounts"):
         return
-    if clip.get("score", 0) < c["post_min_score"]:
-        return  # includes hand-made clips (score 0): those wait for you to press Post
+    threshold = max(90, int(c.get("post_min_score", 90)))
+    score = int(clip.get("score") or 0)
+    if score < threshold:
+        # UNUSED CLIP: Delete its rendered files immediately by default
+        _delete_clip_files(job, clip)
+        clip.update(status="discarded", file="", cover="", error=f"Discarded: virality score {score} < {threshold}% threshold.")
+        jobs.save(job)
+        creators.log(c["id"], f"Discarded & deleted unused clip (score {score} < {threshold}%): {clip.get('title') or clip.get('hook')}")
+        return
     made = enqueue(job, clip, c["accounts"])
     if made:
-        creators.log(c["id"], f"Queued for {len(made)} account(s): {clip.get('title') or clip.get('hook')}")
+        creators.log(c["id"], f"Queued for {len(made)} account(s) (score {score}): {clip.get('title') or clip.get('hook')}")
 
 
 def _caption(clip, creator):
@@ -114,19 +136,41 @@ def _post(p):
             raise RuntimeError("The clip no longer exists or is not finished.")
         if not acc:
             raise RuntimeError("That account was disconnected.")
+        # HARD SAFETY GATE: Never upload anything with score below 90%
+        score = int(clip.get("score") or p.get("score") or 0)
+        if score < 90:
+            p.update(status="cancelled", error="Cancelled: virality score below 90% threshold.")
+            _delete_clip_files(job, clip)
+            clip.update(status="discarded", file="", cover="")
+            jobs.save(job)
+            creators.log(p["creator"], f"Skipped & deleted unused clip: score {score} < 90% threshold")
+            _save()
+            _mirror(p)
+            return
         path = Path(job["dir"]) / "clips" / clip["file"]
         creator = creators.get(job["creator"]) or dict(creators.DEFAULTS, name="clips")
         title, cap = clip.get("title") or clip.get("hook") or "Clip", _caption(clip, creator)
+        publish_time = p.get("due_at") if p.get("due_at", 0) > time.time() + 60 else None
         if acc["platform"] == "youtube":
-            rid, url = accounts.youtube_upload(acc, path, title, cap + "\n\n#Shorts", clip.get("hashtags", []), creator["privacy"])
+            rid, url = accounts.youtube_upload(acc, path, title, cap + "\n\n#Shorts", clip.get("hashtags", []), creator["privacy"], publish_at=publish_time)
         elif acc["platform"] == "instagram":
             rid, url = accounts.instagram_upload(acc, path, f"{title}\n\n{cap}", job["id"])
         elif acc["platform"] == "tiktok":
             rid, url = accounts.tiktok_upload(acc, path, f"{title}\n\n{cap}", creator["privacy"])
         else:
             raise RuntimeError("That kind of account is no longer supported.")
-        p.update(status="posted", posted_at=time.time(), remote_id=rid, url=url, error=None)
-        creators.log(p["creator"], f"Posted to {acc['name']}: {title}")
+        p.update(status="posted", posted_at=time.time(), remote_id=rid, url=url, error=None, scheduled_publish_at=publish_time)
+        if publish_time:
+            dt_str = time.strftime('%Y-%m-%d %H:%M', time.localtime(publish_time))
+            creators.log(p["creator"], f"Cloud-Scheduled on {acc['name']} for {dt_str}: {title}")
+        else:
+            creators.log(p["creator"], f"Posted to {acc['name']}: {title}")
+        # Large .mp4 video is now permanently published/scheduled on YouTube Shorts: clean up local mp4 to save disk space
+        try:
+            path.unlink(missing_ok=True)
+            path.with_suffix(".ass").unlink(missing_ok=True)
+        except Exception:
+            pass
     except Exception as e:  # noqa: BLE001
         p["tries"] += 1
         p["error"] = str(e)[-300:]
@@ -140,17 +184,43 @@ def _post(p):
     _mirror(p)
 
 
+DAILY_YOUTUBE_UPLOADS = 4
+
+
+def _yt_uploaded_today_count():
+    today = time.strftime("%Y-%m-%d")
+    count = 0
+    for p in _posts:
+        if p.get("platform") == "youtube" and p.get("remote_id"):
+            post_t = p.get("uploaded_at") or p.get("posted_at") or 0
+            if _day(post_t) == today:
+                count += 1
+    return count
+
+
 def _run():
     while True:
         time.sleep(15)
-        due = [p for p in list(_posts) if p["status"] == "scheduled" and p["due_at"] <= time.time() and p.get("user")]
+        # Immediate due posts
+        due = [p for p in list(_posts) if p.get("status") == "scheduled" and p.get("due_at", 0) <= time.time() and p.get("user") and not p.get("remote_id")]
+
+        # Native Cloud-Scheduling: Pick advance-scheduled YouTube posts for today's quota batch (up to 4 per day)
+        current_today = _yt_uploaded_today_count()
+        if current_today < DAILY_YOUTUBE_UPLOADS:
+            advance = [p for p in list(_posts) if p.get("status") == "scheduled" and p.get("platform") == "youtube"
+                       and p.get("user") and not p.get("remote_id") and p.get("score", 0) >= 90]
+            advance.sort(key=lambda p: p.get("due_at", 0))
+            for p in advance:
+                if p not in due and (current_today + len(due)) < DAILY_YOUTUBE_UPLOADS:
+                    due.append(p)
+
         for p in due:
             try:
                 with ctx.as_user(p["user"]):
                     if accounts.settings()["paused"]:
                         continue
                     with _lock:
-                        if p["status"] != "scheduled":
+                        if p.get("status") != "scheduled" or p.get("remote_id"):
                             continue
                         p["status"] = "posting"
                     _post(p)
@@ -192,6 +262,13 @@ def cancel(pid):
         if not p or p["status"] != "scheduled":
             raise ValueError("Only posts that are still waiting can be cancelled.")
         p["status"] = "cancelled"
+        job = jobs.get(p["job"])
+        if job:
+            clip = next((c for c in job["clips"] if c["id"] == p["clip"]), None)
+            if clip:
+                _delete_clip_files(job, clip)
+                clip.update(status="discarded", file="", cover="")
+                jobs.save(job)
         _save()
     _mirror(p)
 

@@ -338,21 +338,61 @@ def _yt_token(acc) -> str:
     return acc["access_token"]
 
 
-def youtube_upload(acc, path: Path, title: str, description: str, tags: list, privacy: str):
+def youtube_upload(acc, path: Path, title: str, description: str, tags: list, privacy: str, publish_at: float = None):
     token = _yt_token(acc)
+    status = {"privacyStatus": privacy, "selfDeclaredMadeForKids": False}
+    if publish_at and publish_at > time.time() + 60:
+        import datetime
+        dt = datetime.datetime.fromtimestamp(publish_at, datetime.timezone.utc)
+        status["privacyStatus"] = "private"
+        status["publishAt"] = dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
     meta = {"snippet": {"title": re.sub(r"[<>]", "", title)[:100] or "Clip", "description": re.sub(r"[<>]", "", description)[:4900],
                         "tags": tags[:15], "categoryId": "20"},
-            "status": {"privacyStatus": privacy, "selfDeclaredMadeForKids": False}}
+            "status": status}
     size = path.stat().st_size
-    start = _check(httpx.post("https://www.googleapis.com/upload/youtube/v3/videos",
-                              params={"uploadType": "resumable", "part": "snippet,status"}, json=meta,
-                              headers={"Authorization": f"Bearer {token}", "X-Upload-Content-Type": "video/mp4",
-                                       "X-Upload-Content-Length": str(size)}, timeout=60), "Starting the YouTube upload")
+    try:
+        start = _check(httpx.post("https://www.googleapis.com/upload/youtube/v3/videos",
+                                  params={"uploadType": "resumable", "part": "snippet,status"}, json=meta,
+                                  headers={"Authorization": f"Bearer {token}", "X-Upload-Content-Type": "video/mp4",
+                                           "X-Upload-Content-Length": str(size)}, timeout=60), "Starting the YouTube upload")
+    except Exception as e:
+        if "publishAt" in status:
+            # Fallback if channel doesn't support scheduled release yet
+            status.pop("publishAt", None)
+            status["privacyStatus"] = privacy
+            meta["status"] = status
+            start = _check(httpx.post("https://www.googleapis.com/upload/youtube/v3/videos",
+                                      params={"uploadType": "resumable", "part": "snippet,status"}, json=meta,
+                                      headers={"Authorization": f"Bearer {token}", "X-Upload-Content-Type": "video/mp4",
+                                               "X-Upload-Content-Length": str(size)}, timeout=60), "Starting the YouTube upload")
+        else:
+            raise
     with path.open("rb") as f:
         done = _check(httpx.put(start.headers["Location"], content=f.read(),
                                 headers={"Authorization": f"Bearer {token}", "Content-Type": "video/mp4"}, timeout=900),
                       "Uploading to YouTube").json()
-    return done["id"], f"https://www.youtube.com/shorts/{done['id']}"
+    vid = done["id"]
+
+    # Upload custom high-CTR thumbnail with hook
+    thumb = path.with_suffix(".jpg")
+    if thumb.is_file():
+        try:
+            with thumb.open("rb") as tf:
+                t_bytes = tf.read()
+            tr = httpx.post("https://www.googleapis.com/upload/youtube/v3/thumbnails/set",
+                            params={"videoId": vid, "uploadType": "media"},
+                            content=t_bytes,
+                            headers={"Authorization": f"Bearer {token}", "Content-Type": "image/jpeg"},
+                            timeout=45)
+            if tr.status_code == 200:
+                print(f"[YouTube] Custom hook thumbnail uploaded successfully for {vid}", flush=True)
+            else:
+                print(f"[YouTube] Thumbnail note ({tr.status_code}): {tr.text[:120]}", flush=True)
+        except Exception as e:
+            print(f"[YouTube] Thumbnail upload exception: {e}", flush=True)
+
+    return vid, f"https://www.youtube.com/shorts/{vid}"
 
 
 def youtube_views(acc, ids: list) -> dict:

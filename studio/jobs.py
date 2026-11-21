@@ -107,11 +107,11 @@ _by_user: dict = {}                       # user -> {job id: job}: listing one p
 _lock = threading.RLock()
 on_clip_ready: list = []   # callbacks (job, clip), run once when a clip first finishes
 
-DEFAULTS = {"max_clips": 6, "min_len": 15, "max_len": 60, "style": "bounce", "layout": "blur", "quality": 720,
+DEFAULTS = {"max_clips": 6, "min_len": 30, "max_len": 40, "style": "bounce", "layout": "blur", "quality": 720,
             "range_start": None, "range_end": None, "captions": True}
 
 
-LIMITS = {"max_clips": (1, 20), "min_len": (5, 120), "max_len": (10, 180), "quality": (360, 1080)}
+LIMITS = {"max_clips": (1, 60), "min_len": (5, 120), "max_len": (10, 180), "quality": (360, 1080)}
 
 
 def clean_options(options) -> dict:
@@ -385,6 +385,14 @@ def render_one(job, clip, words):
         near = _caption_words(job, clip, words, off) if clip.get("captions", True) else []
         out = render.render_clip(src, d / "clips", clip["id"], local, near, job["width"], job["height"])
         clip.update(out, status="done", version=clip.get("version", 0) + 1, error=None)
+        # Immediately delete temporary source slice to reclaim disk space
+        if clip.get("src"):
+            try:
+                src_path = Path(clip["src"])
+                if src_path.is_file() and src_path.name.endswith(".src.mp4"):
+                    src_path.unlink(missing_ok=True)
+            except Exception:
+                pass
         post = {k: clip[k] for k in ("title", "description", "hashtags", "hook", "start", "end", "score")}
         (d / "clips" / f"{clip['id']}.json").write_text(json.dumps(post, indent=1), encoding="utf-8")
         if clip["version"] == 1:
@@ -616,6 +624,15 @@ def _run_job(job):
     span = (hi - lo) / 16000
     db = media.loudness_per_second(audio[lo:hi])
 
+    # Dynamic clip scaling: average 3 clips per hour of video duration
+    hours = max(0.2, span / 3600.0)
+    target_clips = max(2, int(round(hours * 3)))
+    if o.get("max_clips") in (None, 6) or o.get("auto_clips"):
+        if span >= 3600 or span < 1800 or o.get("auto_clips"):
+            o["max_clips"] = target_clips
+            job["options"]["max_clips"] = target_clips
+            save(job)
+
     vlock, vstate = threading.Lock(), {}
 
     def whole_video():
@@ -753,6 +770,16 @@ def _run_job(job):
                 else:
                     keep.append(c)
             found = keep
+        # Filter moments so only viral moments with score >= 90% are queued and rendered
+        min_thresh = 90
+        if job.get("creator"):
+            try:
+                c_data = creators.get(job["creator"])
+                if c_data:
+                    min_thresh = max(90, int(c_data.get("post_min_score", 90)))
+            except Exception:
+                min_thresh = 90
+        found = [c for c in found if int(c.get("score") or 0) >= min_thresh]
         for c in found:
             c.update(id=f"clip{len(job['clips']) + 1:02d}", start=round(c["start"] + shift, 2),
                      end=round(c["end"] + shift, 2), style=o["style"], layout=o["layout"],
@@ -781,6 +808,20 @@ def _run_job(job):
     fetch.shutdown(wait=False)
     del audio
     clips = job["clips"]
+    # Auto-cleanup: remove raw/fetched source videos to save disk space
+    try:
+        if job.get("source_path"):
+            sp = Path(job["source_path"])
+            if sp.is_file() and "clips" not in sp.parts:
+                sp.unlink(missing_ok=True)
+                job["source_path"] = ""
+        for pattern in ("*.src.mp4", "*.part", "*.ytdl", "*.wav"):
+            for f in d.glob(pattern):
+                f.unlink(missing_ok=True)
+            for f in (d / "clips").glob(pattern):
+                f.unlink(missing_ok=True)
+    except Exception:
+        pass
     job["ai"] = {"model": model, "tokens": tokens, "log": notes[-5:],
                  "note": "The AI was unavailable, so clips were picked by loudness only." if clips and not model else ""}
     stage = "Done" if clips else "Done, but nothing clip-worthy was found"
