@@ -52,16 +52,42 @@ def _mirror(p):
         jobs.save(job)
 
 
-def _next_slot(account_id, gap_min, cap):
-    """Earliest time that respects the gap between posts and the daily cap for this account."""
-    mine = [p for p in _mine() if p["account"] == account_id and p["status"] in OPEN + ("posted",)]
-    t = max(time.time(), max((p.get("posted_at") or p["due_at"] for p in mine), default=0) + gap_min * 60)
-    for _ in range(30):
-        if sum(1 for p in mine if _day(p.get("posted_at") or p["due_at"]) == _day(t)) < cap:
-            break
-        lt = time.localtime(t + 86400)
-        t = time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 9, 0, 0, 0, 0, -1))  # 9:00 next day
-    return t
+DAILY_SLOTS = [(9, 30), (12, 0), (14, 30), (17, 0), (19, 30)]
+
+
+def _next_slot(account_id, gap_min=105, cap=5):
+    """Strict Sequential Date Gate:
+    Checks dates sequentially starting from today onwards.
+    Verifies that ALL clips for Date D (up to cap=5) are scheduled before ANY clip moves to Date D+1.
+    A particular date must be 100% full before advancing to the next day."""
+    import datetime
+    mine = [p for p in _mine() if p.get("account") == account_id and p.get("status") in OPEN + ("posted",)]
+    now = time.time()
+    now_lt = time.localtime(now)
+    start_date = datetime.date(now_lt.tm_year, now_lt.tm_mon, now_lt.tm_mday)
+
+    for offset in range(30):
+        target_date = start_date + datetime.timedelta(days=offset)
+        date_str = target_date.strftime("%Y-%m-%d")
+
+        # Find all posts currently scheduled or posted for this date
+        day_posts = [p for p in mine if _day(p.get("posted_at") or p.get("due_at", 0)) == date_str]
+
+        # QUICK CHECK: Does this particular date have fewer than cap (5) clips?
+        if len(day_posts) < cap:
+            # Date D is NOT yet full! Fill this date first before moving to Date D+1.
+            slot_idx = len(day_posts)
+            h, m = DAILY_SLOTS[min(slot_idx, len(DAILY_SLOTS) - 1)]
+            slot_t = time.mktime((target_date.year, target_date.month, target_date.day, h, m, 0, 0, 0, -1))
+
+            # If it's today and the slot time has already passed, schedule after last today post + gap
+            if target_date == start_date and slot_t <= now + 60:
+                last_due = max((p.get("due_at", 0) for p in day_posts), default=now)
+                slot_t = max(now + 300, last_due + gap_min * 60)
+
+            return slot_t
+
+    return now + 86400 * 30
 
 
 def _delete_clip_files(job, clip):
@@ -174,8 +200,17 @@ def _post(p):
     except Exception as e:  # noqa: BLE001
         p["tries"] += 1
         p["error"] = str(e)[-300:]
-        if p["tries"] < 3 and clip and acc:
-            p.update(status="scheduled", due_at=time.time() + 600)  # try again in 10 minutes
+        err_str = str(e).lower()
+        if "getaddrinfo" in err_str or "connection" in err_str or "timeout" in err_str or "temporary" in err_str:
+            # Network hiccup: keep scheduled and retry in 3 minutes
+            p.update(status="scheduled", due_at=time.time() + 180)
+            creators.log(p["creator"], f"Network connection retry for {p['account_name']}: {p['error'][:100]}")
+        elif "quotaexceeded" in err_str or "rate limit" in err_str:
+            # Daily quota limit: resume in 1 hour / next window
+            p.update(status="scheduled", due_at=time.time() + 3600)
+            creators.log(p["creator"], f"YouTube daily quota limit reached, will resume in 1h: {title}")
+        elif p["tries"] < 5 and clip and acc:
+            p.update(status="scheduled", due_at=time.time() + 300)
         else:
             p["status"] = "failed"
             creators.log(p["creator"], f"Post failed on {p['account_name']}: {p['error']}")

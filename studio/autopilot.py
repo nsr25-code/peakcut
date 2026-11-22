@@ -193,23 +193,31 @@ def check_and_queue():
         if jobs.busy_count() > 0:
             return  # a video is already being processed, wait for it to complete
 
-    # Daily Batch Gate: strictly 5 clips per day.
-    # If today's 5 clips are already scheduled or posted, rest until tomorrow.
+    # Future Buffer Check: Keep a rolling buffer of 4 days ahead, with strictly 5 clips per day.
+    # Checks dates sequentially: Day D must have all 5 clips scheduled before Day D+1 is scheduled.
     posts_file = config.DATA_DIR / "posts.json"
-    today_str = time.strftime("%Y-%m-%d")
-    today_active_posts = 0
+    BUFFER_DAYS_AHEAD = 4
+    now = time.time()
+    now_lt = time.localtime(now)
+    import datetime
+    start_date = datetime.date(now_lt.tm_year, now_lt.tm_mon, now_lt.tm_mday)
+
+    buffer_full = True
     if posts_file.exists():
         try:
             posts_data = json.loads(posts_file.read_text(encoding="utf-8"))
-            for p in posts_data:
-                pt = p.get("due_at") or p.get("posted_at") or 0
-                if time.strftime("%Y-%m-%d", time.localtime(pt)) == today_str and p.get("status") in ("scheduled", "posted", "posting"):
-                    today_active_posts += 1
+            for day_offset in range(BUFFER_DAYS_AHEAD):
+                check_date = (start_date + datetime.timedelta(days=day_offset)).strftime("%Y-%m-%d")
+                day_count = sum(1 for p in posts_data if time.strftime("%Y-%m-%d", time.localtime(p.get("due_at") or p.get("posted_at") or 0)) == check_date
+                                and p.get("status") in ("scheduled", "posted", "posting"))
+                if day_count < 5:
+                    buffer_full = False
+                    break
         except Exception:
-            pass
+            buffer_full = False
 
-    if today_active_posts >= 5:
-        return  # Today's 5 clips are completed; rest until next calendar day.
+    if buffer_full:
+        return  # All 4 days in future buffer (20 clips) are complete; rest until slots open up.
 
     # 1. Search top target GTA channels
     for ch in TARGET_CHANNELS:
