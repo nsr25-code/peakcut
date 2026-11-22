@@ -14,12 +14,12 @@ def _root() -> Path:
 
 _lock = threading.RLock()
 
-DEFAULTS = {"name": "", "channel": "", "style": "bounce", "layout": "blur", "captions": True, "min_len": 30, "max_len": 40,
-            "max_clips": 6, "min_score": 90, "auto_watch": False, "buffer_min": 20, "live_per_hour": 4, "ai_every_min": 3, "ai_only_on_spike": True, "auto_jump_pct": 60,
+DEFAULTS = {"name": "", "channel": "", "style": "bounce", "layout": "blur", "captions": True, "min_len": 20, "max_len": 60,
+            "max_clips": 5, "min_score": 90, "auto_watch": False, "buffer_min": 20, "live_per_hour": 4, "ai_every_min": 3, "ai_only_on_spike": True, "auto_jump_pct": 60,
             "plan": "free", "decide_mode": "both", "must_clip_min": 0, "min_gap_min": 2,
-            "game": "",
+            "game": "Grand Theft Auto V",
             "trigger_words": "clip that, clip it",
-            "autopost": False, "accounts": [], "post_min_score": 90, "post_gap_min": 45, "daily_cap": 6,
+            "autopost": False, "accounts": [], "post_min_score": 90, "post_gap_min": 105, "daily_cap": 5,
             "privacy": "public", "post_footer": "", "rate_per_1k": 0.0, "channels": {}}
 PLATFORMS = ("youtube", "twitch", "kick")
 

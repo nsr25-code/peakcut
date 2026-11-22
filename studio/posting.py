@@ -184,7 +184,7 @@ def _post(p):
     _mirror(p)
 
 
-DAILY_YOUTUBE_UPLOADS = 4
+DAILY_YOUTUBE_UPLOADS = 5
 
 
 def _yt_uploaded_today_count():
@@ -194,7 +194,9 @@ def _yt_uploaded_today_count():
         if p.get("platform") == "youtube" and p.get("remote_id"):
             post_t = p.get("uploaded_at") or p.get("posted_at") or 0
             if _day(post_t) == today:
-                count += 1
+                t = (p.get("title") or "").upper()
+                if any(k in t for k in ["GTA", "GRAND THEFT AUTO", "VICE CITY", "LOS SANTOS"]):
+                    count += 1
     return count
 
 

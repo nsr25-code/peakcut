@@ -89,6 +89,15 @@ def ensure_creator() -> dict:
             if found.get("min_score") != 90:
                 found["min_score"] = 90
                 updated = True
+            if found.get("daily_cap") != 5:
+                found["daily_cap"] = 5
+                updated = True
+            if found.get("max_clips") != 5:
+                found["max_clips"] = 5
+                updated = True
+            if found.get("post_gap_min") != 105:
+                found["post_gap_min"] = 105
+                updated = True
             if found.get("min_len") != 20 or found.get("max_len") != 60:
                 found["min_len"] = 20
                 found["max_len"] = 60
@@ -106,14 +115,14 @@ def ensure_creator() -> dict:
             "captions": True,
             "min_len": 20,
             "max_len": 60,
-            "max_clips": 6,
+            "max_clips": 5,
             "min_score": 90,
             "autopost": True,
             "game": "Grand Theft Auto V",
             "accounts": yt_accounts,
             "post_min_score": 90,
-            "daily_cap": 4,
-            "post_gap_min": 90,
+            "daily_cap": 5,
+            "post_gap_min": 105,
             "privacy": "public",
             "post_footer": gta_footer,
         })
@@ -184,27 +193,23 @@ def check_and_queue():
         if jobs.busy_count() > 0:
             return  # a video is already being processed, wait for it to complete
 
-    # Daily Batch Gate: Only 1 viral video processed per calendar day, then pause until next day
-    last_run = state.get("last_run", 0.0)
-    today_str = time.strftime("%Y-%m-%d")
-    last_run_str = time.strftime("%Y-%m-%d", time.localtime(last_run)) if last_run else ""
-    if last_run_str == today_str:
-        return  # Today's quota batch already completed; rest until next day
-
-    # Rolling Buffer Limit (3 to 4 days ahead)
-    # If scheduled clips already reach ~4 days into the future (e.g. 25/11), rest and roll forward daily
+    # Daily Batch Gate: strictly 5 clips per day.
+    # If today's 5 clips are already scheduled or posted, rest until tomorrow.
     posts_file = config.DATA_DIR / "posts.json"
+    today_str = time.strftime("%Y-%m-%d")
+    today_active_posts = 0
     if posts_file.exists():
         try:
             posts_data = json.loads(posts_file.read_text(encoding="utf-8"))
-            scheduled = [p for p in posts_data if p.get("status") == "scheduled" and p.get("score", 0) >= 90]
-            if scheduled:
-                furthest_due = max(p.get("due_at", 0) for p in scheduled)
-                days_ahead = (furthest_due - time.time()) / 86400.0
-                if days_ahead >= 3.5:
-                    return  # Rolling buffer is full; wait for scheduled posts to upload
+            for p in posts_data:
+                pt = p.get("due_at") or p.get("posted_at") or 0
+                if time.strftime("%Y-%m-%d", time.localtime(pt)) == today_str and p.get("status") in ("scheduled", "posted", "posting"):
+                    today_active_posts += 1
         except Exception:
             pass
+
+    if today_active_posts >= 5:
+        return  # Today's 5 clips are completed; rest until next calendar day.
 
     # 1. Search top target GTA channels
     for ch in TARGET_CHANNELS:
@@ -226,6 +231,7 @@ def check_and_queue():
                         "captions": True,
                         "min_len": 20,
                         "max_len": 60,
+                        "max_clips": 5,
                         "auto_clips": True,
                         "game": "Grand Theft Auto V",
                     },
@@ -258,6 +264,7 @@ def check_and_queue():
                         "captions": True,
                         "min_len": 20,
                         "max_len": 60,
+                        "max_clips": 5,
                         "auto_clips": True,
                         "game": "Grand Theft Auto V",
                     },

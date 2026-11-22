@@ -624,14 +624,11 @@ def _run_job(job):
     span = (hi - lo) / 16000
     db = media.loudness_per_second(audio[lo:hi])
 
-    # Dynamic clip scaling: average 3 clips per hour of video duration
-    hours = max(0.2, span / 3600.0)
-    target_clips = max(2, int(round(hours * 3)))
-    if o.get("max_clips") in (None, 6) or o.get("auto_clips"):
-        if span >= 3600 or span < 1800 or o.get("auto_clips"):
-            o["max_clips"] = target_clips
-            job["options"]["max_clips"] = target_clips
-            save(job)
+    # Exactly 5 clips per day target
+    target_clips = 5
+    o["max_clips"] = target_clips
+    job["options"]["max_clips"] = target_clips
+    save(job)
 
     vlock, vstate = threading.Lock(), {}
 
@@ -770,7 +767,7 @@ def _run_job(job):
                 else:
                     keep.append(c)
             found = keep
-        # Filter moments so only viral moments with score >= 90% are queued and rendered
+        # Filter moments so only viral moments with score >= 90% are queued and rendered (strict top 5 cap)
         min_thresh = 90
         if job.get("creator"):
             try:
@@ -779,7 +776,7 @@ def _run_job(job):
                     min_thresh = max(90, int(c_data.get("post_min_score", 90)))
             except Exception:
                 min_thresh = 90
-        found = [c for c in found if int(c.get("score") or 0) >= min_thresh]
+        found = sorted([c for c in found if int(c.get("score") or 0) >= min_thresh], key=lambda c: -int(c.get("score") or 0))[:5]
         for c in found:
             c.update(id=f"clip{len(job['clips']) + 1:02d}", start=round(c["start"] + shift, 2),
                      end=round(c["end"] + shift, 2), style=o["style"], layout=o["layout"],
