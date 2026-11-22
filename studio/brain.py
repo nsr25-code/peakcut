@@ -82,13 +82,10 @@ CATEGORIES = {"funny", "fail", "clutch", "rage", "shock", "take", "story", "othe
 _CTRL = re.compile(r"[\x00-\x1f\x7f]+")
 
 GAME_RULES = """
-This stream is {game}. Pick the moments that only mean something with that game in mind:
-- A play, a death, a jump scare, a glitch, a discovery, or the streamer reacting to one.
-- The hook is what was said at that moment, or, if nothing was said, the name of what happened in
-  two or three words ("1 VS 3", "THE SHOT", "HE GOT ME", "CLUTCH"). Never a sentence that needs
-  the game explained.
-- The title names the game when the clip is about it.
-- The hashtags include {tags}.
+This video/stream is {game}. Prioritize moments that match the highest global YouTube Shorts viewer demand:
+- Shocking fails, insane stunt completions, impossible clutches, hilarious glitches, 5-star police escapes, or explosive streamer reactions.
+- The hook MUST be punchy and high-CTR, describing the crazy moment in 2-4 ALL CAPS words ("HOW DID HE SURVIVE?!", "IMPOSSIBLE STUNT", "POLICE CAUGHT HIM", "INSTANT REGRET", "HE ACTUALLY DID IT").
+- Optimize title and hashtags ({tags}) for viral YouTube Shorts search demand.
 """
 
 _LINKS = re.compile(r"(?i)(?:https?://|www\.)\S+|\b[\w-]+\.(?:com|net|org|io|gg|tv|ly|me|co|xyz|app|link|shop)\b\S*|@\w+")

@@ -15,6 +15,14 @@ _lock = threading.RLock()
 _FILE = config.DATA_DIR / "autopilot.json"
 
 TARGET_CHANNELS = [
+    # Global / Worldwide Top GTA Creators (Millions of views & global audience)
+    {"name": "Jelly", "url": "https://www.youtube.com/@Jelly/videos"},
+    {"name": "Kwebbelkop", "url": "https://www.youtube.com/@kwebbelkop/videos"},
+    {"name": "Slogo", "url": "https://www.youtube.com/@slogo/videos"},
+    {"name": "DarkViperAU", "url": "https://www.youtube.com/@DarkViperAU/videos"},
+    {"name": "TGG", "url": "https://www.youtube.com/@TGG_/videos"},
+    {"name": "Whatever57010", "url": "https://www.youtube.com/@whatever57010/videos"},
+    # Top Asian / Indian GTA Creators
     {"name": "Techno Gamerz", "url": "https://www.youtube.com/@technogamerzofficial/videos"},
     {"name": "Mythpat", "url": "https://www.youtube.com/@mythpat/videos"},
     {"name": "Total Gaming", "url": "https://www.youtube.com/@TotalGamingOfficial/videos"},
@@ -23,12 +31,16 @@ TARGET_CHANNELS = [
 ]
 
 GTA_SEARCH_QUERIES = [
-    "ytsearch10:GTA 5 techno gamerz gameplay",
-    "ytsearch10:GTA 5 mythpat funny challenge",
-    "ytsearch10:GTA 6 techno gamerz gameplay",
-    "ytsearch10:GTA 5 live insaan funny moments",
-    "ytsearch10:GTA 5 total gaming funny gameplay hindi",
-    "ytsearch10:GTA 5 viral stunts gameplay hindi",
+    "ytsearch20:GTA 6 viral gameplay leaks reaction trending",
+    "ytsearch20:GTA 5 funny moments best viral clips",
+    "ytsearch20:GTA 5 impossible stunt race challenge",
+    "ytsearch20:GTA 5 darkviperau chaos mod best moments",
+    "ytsearch20:GTA 5 biggest heist funny crazy moments",
+    "ytsearch20:GTA 5 5 star police chase impossible escape",
+    "ytsearch20:GTA 5 jelly funny stunts and fails viral",
+    "ytsearch20:GTA 5 kwebbelkop impossible race moments",
+    "ytsearch20:GTA 5 techno gamerz funny moments",
+    "ytsearch20:GTA 5 mythpat funny challenge",
 ]
 
 GTA_KEYWORDS = [
@@ -43,6 +55,27 @@ def is_gta_video(title: str) -> bool:
     """Strictly checks whether a video title belongs to GTA."""
     t = (title or "").upper()
     return any(k in t for k in GTA_KEYWORDS)
+
+
+def public_demand_score(item: dict) -> float:
+    """Calculate the global public demand, view velocity, and viral interest score of a video."""
+    views = float(item.get("views") or 0)
+    title = (item.get("title") or "").upper()
+    multiplier = 1.0
+
+    # High viewer demand multipliers for trending themes:
+    if any(k in title for k in ["GTA 6", "GTA VI", "VICE CITY"]):
+        multiplier *= 2.5  # Worldwide #1 trending interest
+    if any(k in title for k in ["IMPOSSIBLE", "HARDEST", "WORLD RECORD", "WORLD'S"]):
+        multiplier *= 2.0  # Challenge & stunt virality
+    if any(k in title for k in ["FUNNY", "FAILS", "MOMENTS", "HILARIOUS"]):
+        multiplier *= 1.8  # Comedy & fail moments have maximum Short retention
+    if any(k in title for k in ["POLICE", "CHASE", "5 STAR", "BUSTED", "ESCAPE"]):
+        multiplier *= 1.6  # High-adrenaline police chases
+    if any(k in title for k in ["HEIST", "STEALING", "STOLE", "SUPERCAR", "SECRET", "MYTH"]):
+        multiplier *= 1.5  # Heists, rare cars & secrets
+
+    return views * multiplier
 
 
 def _read_state() -> dict:
@@ -130,7 +163,7 @@ def ensure_creator() -> dict:
 
 
 def fetch_channel_videos(url: str, limit: int = 5) -> list:
-    """Query recent videos from a channel using yt-dlp, filtering strictly for GTA."""
+    """Query recent videos from a channel using yt-dlp, extracting views and filtering strictly for GTA."""
     cmd = [sys.executable, "-m", "yt_dlp", "--flat-playlist", "-I", f"1:{limit}", "--dump-json", url]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=90, encoding="utf-8", errors="replace")
@@ -148,7 +181,13 @@ def fetch_channel_videos(url: str, limit: int = 5) -> list:
                 dur = float(d.get("duration") or 0)
                 # Ignore shorts (< 90 seconds) or live streams in waiting state, and strictly filter for GTA
                 if vid and is_gta_video(title) and (dur >= 600 or dur == 0):
-                    items.append({"id": vid, "title": title, "duration": dur})
+                    items.append({
+                        "id": vid,
+                        "title": title,
+                        "duration": dur,
+                        "views": int(d.get("view_count") or 0),
+                        "channel": d.get("uploader") or d.get("channel") or "",
+                    })
             except Exception:
                 continue
         return items
@@ -157,7 +196,7 @@ def fetch_channel_videos(url: str, limit: int = 5) -> list:
 
 
 def fetch_search_videos(query: str, limit: int = 5) -> list:
-    """Query search results using yt-dlp, filtering strictly for GTA."""
+    """Query search results using yt-dlp, extracting views and filtering strictly for GTA."""
     cmd = [sys.executable, "-m", "yt_dlp", "--flat-playlist", "-I", f"1:{limit}", "--dump-json", query]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=90, encoding="utf-8", errors="replace")
@@ -174,7 +213,13 @@ def fetch_search_videos(query: str, limit: int = 5) -> list:
                 title = d.get("title", "")
                 dur = float(d.get("duration") or 0)
                 if vid and is_gta_video(title) and (dur >= 600 or dur == 0):
-                    items.append({"id": vid, "title": title, "duration": dur})
+                    items.append({
+                        "id": vid,
+                        "title": title,
+                        "duration": dur,
+                        "views": int(d.get("view_count") or 0),
+                        "channel": d.get("uploader") or d.get("channel") or "",
+                    })
             except Exception:
                 continue
         return items
@@ -219,72 +264,58 @@ def check_and_queue():
     if buffer_full:
         return  # All 4 days in future buffer (20 clips) are complete; rest until slots open up.
 
-    # 1. Search top target GTA channels
-    for ch in TARGET_CHANNELS:
-        videos = fetch_channel_videos(ch["url"], limit=5)
-        for v in videos:
-            vid = v["id"]
-            if vid in processed:
-                continue
-            # Found a new GTA video!
-            vurl = f"https://www.youtube.com/watch?v={vid}"
-            title = v["title"]
-            with ctx.as_user(uid):
-                job = jobs.create(
-                    source={"type": "url", "url": vurl, "name": title},
-                    options={
-                        "quality": 1080,
-                        "style": "bounce",
-                        "layout": "blur",
-                        "captions": True,
-                        "min_len": 20,
-                        "max_len": 60,
-                        "max_clips": 5,
-                        "auto_clips": True,
-                        "game": "Grand Theft Auto V",
-                    },
-                    creator=creator["id"],
-                )
-            processed.add(vid)
-            state["processed_ids"] = list(processed)[-200:]
-            state["last_run"] = time.time()
-            state["last_title"] = title
-            _save_state(state)
-            print(f"\n[Autopilot] Queued viral GTA video from {ch['name']}: {title} ({vurl})\n", flush=True)
-            return  # process one video at a time
+    candidates = []
 
-    # 2. Fallback: Search queries for viral GTA moments if channels have no new uploads
-    for q in GTA_SEARCH_QUERIES:
-        videos = fetch_search_videos(q, limit=5)
+    # 1. Search top global target GTA channels
+    for ch in TARGET_CHANNELS:
+        videos = fetch_channel_videos(ch["url"], limit=3)
         for v in videos:
-            vid = v["id"]
-            if vid in processed:
-                continue
-            vurl = f"https://www.youtube.com/watch?v={vid}"
-            title = v["title"]
-            with ctx.as_user(uid):
-                job = jobs.create(
-                    source={"type": "url", "url": vurl, "name": title},
-                    options={
-                        "quality": 1080,
-                        "style": "bounce",
-                        "layout": "blur",
-                        "captions": True,
-                        "min_len": 20,
-                        "max_len": 60,
-                        "max_clips": 5,
-                        "auto_clips": True,
-                        "game": "Grand Theft Auto V",
-                    },
-                    creator=creator["id"],
-                )
-            processed.add(vid)
-            state["processed_ids"] = list(processed)[-200:]
-            state["last_run"] = time.time()
-            state["last_title"] = title
-            _save_state(state)
-            print(f"\n[Autopilot] Queued viral GTA video from search ({q}): {title} ({vurl})\n", flush=True)
-            return
+            if v["id"] not in processed:
+                v["source_label"] = ch["name"]
+                candidates.append(v)
+
+    # 2. Add candidates from viral trending search queries
+    for q in GTA_SEARCH_QUERIES:
+        videos = fetch_search_videos(q, limit=3)
+        for v in videos:
+            if v["id"] not in processed:
+                v["source_label"] = v.get("channel") or "Global Search"
+                candidates.append(v)
+
+    if not candidates:
+        return
+
+    # Rank all candidate videos strictly by Public Demand & Trending Virality Score
+    candidates.sort(key=public_demand_score, reverse=True)
+    best = candidates[0]
+    vid = best["id"]
+    title = best["title"]
+    views = best.get("views", 0)
+    source_name = best.get("source_label", "Worldwide")
+    vurl = f"https://www.youtube.com/watch?v={vid}"
+
+    with ctx.as_user(uid):
+        job = jobs.create(
+            source={"type": "url", "url": vurl, "name": title},
+            options={
+                "quality": 1080,
+                "style": "bounce",
+                "layout": "blur",
+                "captions": True,
+                "min_len": 20,
+                "max_len": 60,
+                "max_clips": 5,
+                "auto_clips": True,
+                "game": "Grand Theft Auto V",
+            },
+            creator=creator["id"],
+        )
+    processed.add(vid)
+    state["processed_ids"] = list(processed)[-200:]
+    state["last_run"] = time.time()
+    state["last_title"] = title
+    _save_state(state)
+    print(f"\n[Autopilot] Queued top public-demand GTA video ({views:,} views) from {source_name}: {title} ({vurl})\n", flush=True)
 
 
 def cleanup_old_sources():
