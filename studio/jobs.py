@@ -879,7 +879,7 @@ def _worker(quick_only=False):
 
 def _pick_up_after_restart():
     """Videos and single clips that were being made when the server stopped: queued again, oldest first."""
-    waiting = sorted((j for j in all_jobs() if j.get("status") == "queued" and j.get("resume")), key=lambda j: j["created"])
+    waiting = sorted((j for j in all_jobs() if j.get("status") == "queued"), key=lambda j: j["created"])
     for j in waiting:
         _q.put(("job", j["id"], None), user=j["user"])
     for j in all_jobs():
