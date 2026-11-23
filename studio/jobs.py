@@ -696,7 +696,7 @@ def _run_job(job):
             words = json.loads((d / "words.json").read_text(encoding="utf-8"))
         except ValueError:
             words = []
-        done_blocks = min(int(job.get("done_blocks", 0)), len(blocks)) if words else 0
+        done_blocks = min(int(job.get("done_blocks", 0)), len(blocks)) if (words and job.get("clips")) else 0
         tokens, model = int((job.get("ai") or {}).get("tokens", 0)), (job.get("ai") or {}).get("model")
         if done_blocks < len(blocks):     # words past the last finished part are transcribed again
             cut = blocks[done_blocks][0] / 16000

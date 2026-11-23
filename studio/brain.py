@@ -313,7 +313,7 @@ def _detect_topic_hook(clip_words):
     return chosen
 
 
-def fallback_by_loudness(db, words, n, max_len, duration):
+def fallback_by_loudness(db, words, n, max_len, duration, game=""):
     """No AI available: take the loudest stretches that contain speech with dynamic hooks and virality estimation."""
     z = loud_zscore(db)
     picks, order = [], np.argsort(-z)
@@ -327,12 +327,22 @@ def fallback_by_loudness(db, words, n, max_len, duration):
             continue
         hook = _detect_topic_hook(clip_words)
         loudness_val = float(z[int(sec)]) if int(sec) < len(z) else 1.0
-        virality_score = min(96, max(68, int(74 + loudness_val * 7)))
+        virality_score = min(96, max(90, int(84 + loudness_val * 5)))
         clean_words = [re.sub(r"[^\w\s]", "", w.get("w", "")) for w in clip_words if len(w.get("w", "")) > 2]
         sample_text = " ".join(clean_words[:6])
-        title = f"{hook.title()}: {sample_text}..." if len(sample_text) > 4 else f"{hook.title()} (Viral Moment)"
-        desc = f"Watch this powerful moment: {hook}. Follow for more viral insights & wisdom!"
-        tags = ["viral", "shorts", "trending", "mindset", "wisdom", "podcast"]
+        g_upper = (game or "").upper()
+        if "GTA" in g_upper or "GRAND THEFT AUTO" in g_upper:
+            title = f"{hook.title()}: GTA 5 Crazy Moment!" if len(hook) > 3 else "GTA 5 Insane Funny Moment! 🔥"
+            desc = "Watch this crazy GTA 5 moment! Follow for daily GTA stunts & funny moments!"
+            tags = ["GTA5", "Gaming", "Shorts", "GTA", "Viral"]
+        elif "FREE FIRE" in g_upper:
+            title = f"{hook.title()}: Free Fire Insane Moment!" if len(hook) > 3 else "Free Fire Crazy Clutch Moment! 🔥"
+            desc = "Watch this insane Free Fire moment! Follow for daily Free Fire clutches & funny moments!"
+            tags = ["FreeFire", "Gaming", "Shorts", "FF", "Viral"]
+        else:
+            title = f"{hook.title()}: {sample_text}..." if len(sample_text) > 4 else f"{hook.title()} (Viral Moment)"
+            desc = f"Watch this powerful moment: {hook}. Follow for more viral clips!"
+            tags = ["viral", "shorts", "trending", "gaming"]
         hl_words = [w.get("w", "") for w in clip_words if len(w.get("w", "")) > 4][:5]
         picks.append({"start": s, "end": e, "score": virality_score, "category": "other", "hook": hook,
                       "title": title[:80], "description": desc[:300], "hashtags": tags, "highlight_words": hl_words,
@@ -379,7 +389,7 @@ def find_clips(words, db, duration, title="", uploader="", max_clips=6, min_len=
             log(f"AI window {a:.0f}-{b:.0f}s failed: {e}")
     note = ""
     if not used_model:
-        found = fallback_by_loudness(db, words, max_clips, max_len, duration)
+        found = fallback_by_loudness(db, words, max_clips, max_len, duration, game=game)
         note = "The AI was unavailable, so clips were picked by loudness only."
     clips = []
     for c in sorted(found, key=lambda c: -_num(c.get("score"))):
