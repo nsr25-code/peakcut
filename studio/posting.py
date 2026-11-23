@@ -58,7 +58,7 @@ def _mirror(p):
 
 DAILY_SLOTS = [(7, 30), (11, 30), (15, 30), (19, 30)]
 DAILY_CAP = 4
-DAILY_YOUTUBE_UPLOADS = 4
+DAILY_YOUTUBE_UPLOADS = 6
 
 
 def is_gta_clip(title: str) -> bool:
@@ -366,7 +366,7 @@ def _post(p):
     _mirror(p)
 
 
-DAILY_YOUTUBE_UPLOADS = 4
+DAILY_YOUTUBE_UPLOADS = 6
 
 
 def _yt_uploaded_today_count(account_id=None):
