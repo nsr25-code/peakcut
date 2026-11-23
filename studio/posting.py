@@ -358,16 +358,16 @@ def _post(p):
 DAILY_YOUTUBE_UPLOADS = 4
 
 
-def _yt_uploaded_today_count():
+def _yt_uploaded_today_count(account_id=None):
     today = time.strftime("%Y-%m-%d")
     count = 0
     for p in _posts:
         if p.get("platform") == "youtube" and p.get("remote_id"):
+            if account_id and p.get("account") != account_id:
+                continue
             post_t = p.get("uploaded_at") or p.get("posted_at") or 0
             if _day(post_t) == today:
-                t = (p.get("title") or "").upper()
-                if any(k in t for k in ["GTA", "GRAND THEFT AUTO", "VICE CITY", "LOS SANTOS"]):
-                    count += 1
+                count += 1
     return count
 
 
@@ -379,16 +379,17 @@ def _run():
         due = [p for p in list(_posts) if p.get("status") == "scheduled" and p.get("user") and not p.get("remote_id")
                and p.get("retry_at", 0) <= now and p.get("due_at", 0) <= now]
 
-        # Native Cloud-Scheduling: Pick advance-scheduled YouTube posts for today's quota batch (up to 5 per day)
-        current_today = _yt_uploaded_today_count()
-        if current_today < DAILY_YOUTUBE_UPLOADS:
-            advance = [p for p in list(_posts) if p.get("status") == "scheduled" and p.get("platform") == "youtube"
-                       and p.get("user") and not p.get("remote_id") and p.get("score", 0) >= 90
-                       and p.get("retry_at", 0) <= now]
-            advance.sort(key=lambda p: p.get("target_publish_at") or p.get("due_at", 0))
-            for p in advance:
-                if p not in due and (current_today + len(due)) < DAILY_YOUTUBE_UPLOADS:
-                    due.append(p)
+        # Native Cloud-Scheduling: Pick advance-scheduled YouTube posts up to 4 per channel per day
+        advance = [p for p in list(_posts) if p.get("status") == "scheduled" and p.get("platform") == "youtube"
+                   and p.get("user") and not p.get("remote_id") and p.get("score", 0) >= 90
+                   and p.get("retry_at", 0) <= now]
+        advance.sort(key=lambda p: p.get("target_publish_at") or p.get("due_at", 0))
+        for p in advance:
+            aid = p.get("account")
+            ch_today = _yt_uploaded_today_count(aid)
+            ch_due = sum(1 for x in due if x.get("account") == aid)
+            if p not in due and (ch_today + ch_due) < DAILY_YOUTUBE_UPLOADS:
+                due.append(p)
 
         for p in due:
             try:
