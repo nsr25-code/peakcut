@@ -44,11 +44,15 @@ def _day(t):
 
 
 def _mirror(p):
-    """Copy the post's state onto its clip so the clip card can show it."""
+    """Copy the post's state onto its clip so the clip card can show it.
+    Cleans up any stale/deleted posts so the card NEVER displays duplicate or ghost badges."""
     job = jobs.get(p["job"])
     clip = next((c for c in job["clips"] if c["id"] == p["clip"]), None) if job else None
     if clip is not None:
-        clip.setdefault("posts", {})[p["id"]] = {k: p.get(k) for k in ("account_name", "platform", "status", "url", "due_at", "error")}
+        valid_ids = {post["id"] for post in _posts if post.get("job") == p["job"] and post.get("clip") == p["clip"]}
+        clip_posts = {pid: v for pid, v in clip.get("posts", {}).items() if pid in valid_ids}
+        clip_posts[p["id"]] = {k: p.get(k) for k in ("account_name", "platform", "status", "url", "due_at", "error")}
+        clip["posts"] = clip_posts
         jobs.save(job)
 
 
@@ -86,10 +90,11 @@ def _next_slot(account_id, gap_min=105, cap=4):
       Slot 4: 07:30 PM (19, 30)
 
     1. Checks dates sequentially starting from today onwards.
-    2. Any occupied slot is SKIPPED to prevent duplicate/same-time scheduling.
-    3. If target_date is today and a slot's time has already passed in real-time, it is skipped.
-    4. Picks the FIRST unoccupied valid slot.
-    5. Only when all 4 slots for Date D are completely full does it move to Date D+1.
+    2. If Date D ALREADY has >= cap (4) posts, it is 100% full; skip to Date D+1.
+    3. Any occupied slot is SKIPPED to prevent duplicate/same-time scheduling.
+    4. If target_date is today and a slot's time has already passed in real-time, it is skipped.
+    5. Picks the FIRST unoccupied valid slot.
+    6. Only when all 4 slots for Date D are completely full does it move to Date D+1.
     """
     import datetime
     now = time.time()
@@ -98,6 +103,16 @@ def _next_slot(account_id, gap_min=105, cap=4):
 
     for offset in range(30):
         target_date = start_date + datetime.timedelta(days=offset)
+        date_str = target_date.strftime("%Y-%m-%d")
+
+        # Find all GTA posts currently scheduled or posted for this date
+        day_posts = [p for p in _posts if _day(p.get("target_publish_at") or p.get("scheduled_publish_at") or p.get("due_at", 0)) == date_str
+                     and p.get("status") in OPEN + ("posted",) and is_gta_clip(p.get("title"))]
+
+        # STRICT GATE: If this date already has >= cap (4) posts, this day is 100% full! Move to next date!
+        if len(day_posts) >= cap:
+            continue
+
         for h, m in DAILY_SLOTS:
             slot_t = time.mktime((target_date.year, target_date.month, target_date.day, h, m, 0, 0, 0, -1))
             # If today and slot time has already passed in real-time (with 2m buffer), cannot schedule in past
