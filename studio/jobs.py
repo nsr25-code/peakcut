@@ -106,6 +106,7 @@ _jobs: dict = {}
 _by_user: dict = {}                       # user -> {job id: job}: listing one person's videos never scans everyone's
 _lock = threading.RLock()
 on_clip_ready: list = []   # callbacks (job, clip), run once when a clip first finishes
+on_job_done: list = []     # callbacks (job), run once when all clips for a video job are finished
 
 DEFAULTS = {"max_clips": 6, "min_len": 30, "max_len": 40, "style": "bounce", "layout": "blur", "quality": 720,
             "range_start": None, "range_end": None, "captions": True}
@@ -831,6 +832,11 @@ def _run_job(job):
     except Exception:  # noqa: BLE001
         pass
     creators.log(job["creator"], f"Video finished with {len(clips)} clips in {round(time.time() - t0)}s: {job['title']}")
+    for fn in on_job_done:
+        try:
+            fn(job)
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
 
 
 def _worker(quick_only=False):

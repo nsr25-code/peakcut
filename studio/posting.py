@@ -52,17 +52,19 @@ def _mirror(p):
         jobs.save(job)
 
 
-DAILY_SLOTS = [(9, 30), (12, 0), (14, 30), (17, 0), (19, 30)]
+DAILY_SLOTS = [(7, 30), (11, 30), (15, 30), (19, 30)]
+DAILY_CAP = 4
+DAILY_YOUTUBE_UPLOADS = 4
 
 
 def is_gta_clip(title: str) -> bool:
     t = (title or "").upper()
-    return any(k in t for k in ["GTA", "GRAND THEFT AUTO", "VICE CITY", "LOS SANTOS", "TREVOR", "FRANKLIN", "MICHAEL", "SUPERCAR", "BIGFOOT", "CRAB", "YACHT", "STUNT"])
+    return any(k in t for k in ["GTA", "GRAND THEFT AUTO", "VICE CITY", "LOS SANTOS", "TREVOR", "FRANKLIN", "MICHAEL", "SUPERCAR", "BIGFOOT", "CRAB", "YACHT", "STUNT", "CAR", "ESCAPE", "TRUCK"])
 
 
-def _is_slot_occupied(account_id: str, slot_timestamp: float, margin_seconds: int = 45 * 60) -> bool:
+def _is_slot_occupied(account_id: str, slot_timestamp: float, margin_seconds: int = 60 * 60) -> bool:
     """Checks whether an existing post is already scheduled or posted for this slot."""
-    for p in _mine():
+    for p in _posts:
         if p.get("account") != account_id:
             continue
         if p.get("status") not in OPEN + ("posted",):
@@ -75,21 +77,19 @@ def _is_slot_occupied(account_id: str, slot_timestamp: float, margin_seconds: in
     return False
 
 
-def _next_slot(account_id, gap_min=105, cap=5):
-    """Strict Per-Day Fixed Slot Allocator:
-    Checks dates sequentially starting from today onwards.
-    5 fixed daily slots:
-      Slot 1: 09:30 AM (9, 30)
-      Slot 2: 12:00 PM (12, 0)
-      Slot 3: 02:30 PM (14, 30)
-      Slot 4: 05:00 PM (17, 0)
-      Slot 5: 07:30 PM (19, 30)
+def _next_slot(account_id, gap_min=105, cap=4):
+    """Strict Per-Day Fixed Slot Allocator (07:30 AM to 07:30 PM):
+    4 fixed daily slots:
+      Slot 1: 07:30 AM (7, 30)
+      Slot 2: 11:30 AM (11, 30)
+      Slot 3: 03:30 PM (15, 30)
+      Slot 4: 07:30 PM (19, 30)
 
-    1. Checks which slots are ALREADY scheduled or posted on each date.
+    1. Checks dates sequentially starting from today onwards.
     2. Any occupied slot is SKIPPED to prevent duplicate/same-time scheduling.
     3. If target_date is today and a slot's time has already passed in real-time, it is skipped.
     4. Picks the FIRST unoccupied valid slot.
-    5. Only when all slots for Date D are completely full does it move to Date D+1.
+    5. Only when all 4 slots for Date D are completely full does it move to Date D+1.
     """
     import datetime
     now = time.time()
@@ -109,6 +109,44 @@ def _next_slot(account_id, gap_min=105, cap=5):
             return slot_t
 
     return now + 86400 * 30
+
+
+def _update_schedule_state():
+    """Maintains a persistent record of scheduled dates and times in data/schedule_state.json."""
+    state_file = config.DATA_DIR / "schedule_state.json"
+    try:
+        now = time.time()
+        import datetime
+        gta_posts = [p for p in _posts if p.get("status") in OPEN + ("posted",) and is_gta_clip(p.get("title"))]
+        gta_posts.sort(key=lambda p: p.get("target_publish_at") or p.get("scheduled_publish_at") or p.get("due_at", 0))
+
+        last_post = gta_posts[-1] if gta_posts else None
+        last_slot_str = None
+        if last_post:
+            last_t = last_post.get("target_publish_at") or last_post.get("scheduled_publish_at") or last_post.get("due_at", 0)
+            last_slot_str = datetime.datetime.fromtimestamp(last_t).strftime("%Y-%m-%d %I:%M %p")
+
+        next_t = _next_slot("yt_UC5Ds3s_ijysctdQIULSRxOQ", cap=DAILY_CAP)
+        next_slot_str = datetime.datetime.fromtimestamp(next_t).strftime("%Y-%m-%d %I:%M %p")
+
+        state = {
+            "daily_cap": DAILY_CAP,
+            "window": "07:30 AM to 07:30 PM",
+            "slots": [
+                {"slot": 1, "time": "07:30 AM", "hour": 7, "minute": 30},
+                {"slot": 2, "time": "11:30 AM", "hour": 11, "minute": 30},
+                {"slot": 3, "time": "03:30 PM", "hour": 15, "minute": 30},
+                {"slot": 4, "time": "07:30 PM", "hour": 19, "minute": 30}
+            ],
+            "last_scheduled_slot": last_slot_str,
+            "last_scheduled_title": last_post.get("title") if last_post else None,
+            "next_available_slot": next_slot_str,
+            "updated_at": now,
+        }
+        state_file.write_text(json.dumps(state, indent=2), encoding="utf-8")
+        return state
+    except Exception:
+        return {}
 
 
 def _delete_clip_files(job, clip):
@@ -152,22 +190,82 @@ def enqueue(job, clip, account_ids, now=False) -> list:
 
 
 def on_clip_ready(job, clip):
-    """Called once when a clip first finishes rendering."""
+    """Called once when a single clip finishes rendering.
+    Logs progress; waits until ALL clips for the video job are rendered before assigning timing slots."""
+    c = creators.get(job["creator"])
+    score = int(clip.get("score") or 0)
+    if c:
+        creators.log(c["id"], f"Clip rendered ({score}% virality): {clip.get('title') or clip.get('hook')}")
+
+
+def on_job_done(job):
+    """Called once when ALL clips for a video job finish rendering.
+    Enforces user rule: PeakCut par saare clips banne ke baad hi unpar timing assign karna!
+    1. Collects all clips that finished rendering (status='done') with score >= 90%.
+    2. Sorts them by virality score descending.
+    3. Discards & cleans files of clips < 90%.
+    4. For top clips (up to DAILY_CAP=4), sequentially determines and assigns the next free daily slots
+       (07:30 AM, 11:30 AM, 03:30 PM, 07:30 PM).
+    5. Saves the assigned posts and schedule state tracker.
+    6. Triggers YouTube cloud-scheduling.
+    """
     c = creators.get(job["creator"])
     if not c or not c.get("autopost") or not c.get("accounts"):
         return
+
     threshold = max(90, int(c.get("post_min_score", 90)))
-    score = int(clip.get("score") or 0)
-    if score < threshold:
-        # UNUSED CLIP: Delete its rendered files immediately by default
-        _delete_clip_files(job, clip)
-        clip.update(status="discarded", file="", cover="", error=f"Discarded: virality score {score} < {threshold}% threshold.")
-        jobs.save(job)
-        creators.log(c["id"], f"Discarded & deleted unused clip (score {score} < {threshold}%): {clip.get('title') or clip.get('hook')}")
+    raw_clips = list(job.get("clips", []))
+
+    qualified = []
+    for clip in raw_clips:
+        score = int(clip.get("score") or 0)
+        if clip.get("status") == "done" and score >= threshold:
+            qualified.append(clip)
+        else:
+            _delete_clip_files(job, clip)
+            clip.update(status="discarded", file="", cover="")
+    jobs.save(job)
+
+    if not qualified:
+        creators.log(c["id"], f"No clips qualified (>= {threshold}% score) from: {job.get('title')}")
         return
-    made = enqueue(job, clip, c["accounts"])
-    if made:
-        creators.log(c["id"], f"Queued for {len(made)} account(s) (score {score}): {clip.get('title') or clip.get('hook')}")
+
+    # Sort highest virality score first
+    qualified.sort(key=lambda x: int(x.get("score") or 0), reverse=True)
+
+    # Only take up to DAILY_CAP (4) clips per day batch
+    cap = int(c.get("daily_cap", DAILY_CAP))
+    to_schedule = qualified[:cap]
+    for extra in qualified[cap:]:
+        _delete_clip_files(job, extra)
+        extra.update(status="discarded", file="", cover="")
+    jobs.save(job)
+
+    # Batch-assign timing slots now!
+    import datetime
+    with _lock:
+        for aid in c["accounts"]:
+            acc = accounts.get(aid)
+            if not acc:
+                continue
+            for clip in to_schedule:
+                if any(p.get("job") == job["id"] and p.get("clip") == clip["id"] and p.get("account") == aid for p in _posts):
+                    continue
+                slot_t = _next_slot(aid, c["post_gap_min"], cap=cap)
+                dt_str = datetime.datetime.fromtimestamp(slot_t).strftime("%Y-%m-%d %I:%M %p")
+                p = {
+                    "id": secrets.token_hex(8), "user": job.get("user", "u_local"), "job": job["id"],
+                    "clip": clip["id"], "creator": job["creator"], "account": aid,
+                    "account_name": acc["name"], "platform": acc["platform"], "status": "scheduled",
+                    "due_at": slot_t, "target_publish_at": slot_t, "scheduled_publish_at": slot_t,
+                    "created": time.time(), "title": clip.get("title") or clip.get("hook") or "Clip",
+                    "score": clip.get("score", 0), "tries": 0, "url": "", "remote_id": "", "error": None, "views": None
+                }
+                _posts.append(p)
+                _mirror(p)
+                creators.log(c["id"], f"Assigned timing {dt_str} (Score {p['score']}): {p['title']}")
+        _save()
+    _update_schedule_state()
 
 
 def _caption(clip, creator):
@@ -242,7 +340,7 @@ def _post(p):
     _mirror(p)
 
 
-DAILY_YOUTUBE_UPLOADS = 5
+DAILY_YOUTUBE_UPLOADS = 4
 
 
 def _yt_uploaded_today_count():
@@ -406,6 +504,8 @@ def start():
                 p.update(status="failed", error="The studio closed during this upload. Check the account, then retry.")
         _save()
     jobs.on_clip_ready.append(on_clip_ready)
+    jobs.on_job_done.append(on_job_done)
+    _update_schedule_state()
     threading.Thread(target=_run, daemon=True).start()
     threading.Thread(target=_stats, daemon=True).start()
     threading.Thread(target=alerts.digest_loop, args=(digest_text,), daemon=True).start()

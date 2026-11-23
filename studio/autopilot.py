@@ -122,11 +122,11 @@ def ensure_creator() -> dict:
             if found.get("min_score") != 90:
                 found["min_score"] = 90
                 updated = True
-            if found.get("daily_cap") != 5:
-                found["daily_cap"] = 5
+            if found.get("daily_cap") != 4:
+                found["daily_cap"] = 4
                 updated = True
-            if found.get("max_clips") != 5:
-                found["max_clips"] = 5
+            if found.get("max_clips") != 4:
+                found["max_clips"] = 4
                 updated = True
             if found.get("post_gap_min") != 105:
                 found["post_gap_min"] = 105
@@ -148,13 +148,13 @@ def ensure_creator() -> dict:
             "captions": True,
             "min_len": 20,
             "max_len": 60,
-            "max_clips": 5,
+            "max_clips": 4,
             "min_score": 90,
             "autopost": True,
             "game": "Grand Theft Auto V",
             "accounts": yt_accounts,
             "post_min_score": 90,
-            "daily_cap": 5,
+            "daily_cap": 4,
             "post_gap_min": 105,
             "privacy": "public",
             "post_footer": gta_footer,
@@ -238,10 +238,12 @@ def check_and_queue():
         if jobs.busy_count() > 0:
             return  # a video is already being processed, wait for it to complete
 
-    # Future Buffer Check: Keep a rolling buffer of 4 days ahead, with strictly 5 clips per day.
-    # Checks dates sequentially: Day D must have all 5 clips scheduled before Day D+1 is scheduled.
+    # Future Buffer Check: Keep a rolling buffer of 4 days ahead, with strictly 4 clips per day.
+    # Checks dates sequentially: Day D must have all 4 clips scheduled before Day D+1 is scheduled.
     posts_file = config.DATA_DIR / "posts.json"
     BUFFER_DAYS_AHEAD = 4
+    DAILY_CAP = 4
+    DAILY_SLOTS = [(7, 30), (11, 30), (15, 30), (19, 30)]
     now = time.time()
     now_lt = time.localtime(now)
     import datetime
@@ -251,7 +253,6 @@ def check_and_queue():
     if posts_file.exists():
         try:
             posts_data = json.loads(posts_file.read_text(encoding="utf-8"))
-            DAILY_SLOTS = [(9, 30), (12, 0), (14, 30), (17, 0), (19, 30)]
             for day_offset in range(BUFFER_DAYS_AHEAD):
                 check_date = start_date + datetime.timedelta(days=day_offset)
                 date_str = check_date.strftime("%Y-%m-%d")
@@ -260,19 +261,19 @@ def check_and_queue():
                     slot_t = time.mktime((check_date.year, check_date.month, check_date.day, h, m, 0, 0, 0, -1))
                     is_occ = any(
                         p.get("status") in ("scheduled", "posted", "posting")
-                        and abs((p.get("target_publish_at") or p.get("scheduled_publish_at") or p.get("due_at") or 0) - slot_t) <= 45 * 60
+                        and abs((p.get("target_publish_at") or p.get("scheduled_publish_at") or p.get("due_at") or 0) - slot_t) <= 60 * 60
                         for p in posts_data
                     )
                     if is_occ or (day_offset == 0 and slot_t <= now + 120):
                         occupied_count += 1
-                if occupied_count < 5:
+                if occupied_count < DAILY_CAP:
                     buffer_full = False
                     break
         except Exception:
             buffer_full = False
 
     if buffer_full:
-        return  # All 4 days in future buffer (20 clips) are complete; rest until slots open up.
+        return  # All 4 days in future buffer (16 clips) are complete; rest until slots open up.
 
     candidates = []
 
@@ -314,7 +315,7 @@ def check_and_queue():
                 "captions": True,
                 "min_len": 20,
                 "max_len": 60,
-                "max_clips": 5,
+                "max_clips": 4,
                 "auto_clips": True,
                 "game": "Grand Theft Auto V",
             },
