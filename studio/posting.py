@@ -6,7 +6,7 @@ from pathlib import Path
 
 import json
 
-from . import accounts, alerts, config, creators, ctx, jobs, live
+from . import accounts, alerts, auth, config, creators, ctx, jobs, live
 
 _lock = threading.RLock()
 _FILE = config.DATA_DIR / "posts.json"
@@ -67,13 +67,11 @@ def is_gta_clip(title: str) -> bool:
 
 
 def _is_slot_occupied(account_id: str, slot_timestamp: float, margin_seconds: int = 60 * 60) -> bool:
-    """Checks whether an existing post is already scheduled or posted for this slot."""
+    """Checks whether an existing post is already scheduled or posted for this slot on this specific account."""
     for p in _posts:
         if p.get("account") != account_id:
             continue
         if p.get("status") not in OPEN + ("posted",):
-            continue
-        if not is_gta_clip(p.get("title")):
             continue
         pub_t = p.get("target_publish_at") or p.get("scheduled_publish_at") or p.get("due_at", 0)
         if abs(pub_t - slot_timestamp) <= margin_seconds:
@@ -90,8 +88,8 @@ def _next_slot(account_id, gap_min=105, cap=4):
       Slot 4: 07:30 PM (19, 30)
 
     1. Checks dates sequentially starting from today onwards.
-    2. If Date D ALREADY has >= cap (4) posts, it is 100% full; skip to Date D+1.
-    3. Any occupied slot is SKIPPED to prevent duplicate/same-time scheduling.
+    2. If Date D ALREADY has >= cap (4) posts for this account, it is 100% full; skip to Date D+1.
+    3. Any occupied slot on this account is SKIPPED to prevent duplicate/same-time scheduling.
     4. If target_date is today and a slot's time has already passed in real-time, it is skipped.
     5. Picks the FIRST unoccupied valid slot.
     6. Only when all 4 slots for Date D are completely full does it move to Date D+1.
@@ -105,10 +103,10 @@ def _next_slot(account_id, gap_min=105, cap=4):
         target_date = start_date + datetime.timedelta(days=offset)
         date_str = target_date.strftime("%Y-%m-%d")
 
-        # Find all GTA posts currently scheduled or posted for this date FOR THIS ACCOUNT
+        # Find all posts currently scheduled or posted for this date FOR THIS ACCOUNT
         day_posts = [p for p in _posts if p.get("account") == account_id
                      and _day(p.get("target_publish_at") or p.get("scheduled_publish_at") or p.get("due_at", 0)) == date_str
-                     and p.get("status") in OPEN + ("posted",) and is_gta_clip(p.get("title"))]
+                     and p.get("status") in OPEN + ("posted",)]
 
         # STRICT GATE: If this date already has >= cap (4) posts, this day is 100% full! Move to next date!
         if len(day_posts) >= cap:
@@ -119,7 +117,7 @@ def _next_slot(account_id, gap_min=105, cap=4):
             # If today and slot time has already passed in real-time (with 2m buffer), cannot schedule in past
             if target_date == start_date and slot_t <= now + 120:
                 continue
-            # If slot is already occupied by an existing post, skip it
+            # If slot is already occupied by an existing post on this account, skip it
             if _is_slot_occupied(account_id, slot_t):
                 continue
             return slot_t
@@ -128,22 +126,36 @@ def _next_slot(account_id, gap_min=105, cap=4):
 
 
 def _update_schedule_state():
-    """Maintains a persistent record of scheduled dates and times in data/schedule_state.json."""
+    """Maintains a persistent record of scheduled dates and times in data/schedule_state.json for all channels."""
     state_file = config.DATA_DIR / "schedule_state.json"
     try:
         now = time.time()
         import datetime
-        gta_posts = [p for p in _posts if p.get("status") in OPEN + ("posted",) and is_gta_clip(p.get("title"))]
-        gta_posts.sort(key=lambda p: p.get("target_publish_at") or p.get("scheduled_publish_at") or p.get("due_at", 0))
+        uid = auth.local_user().id
+        with ctx.as_user(uid):
+            all_accounts = accounts._all()
+            yt_accs = [a for a in all_accounts if a.get("platform") == "youtube"]
 
-        last_post = gta_posts[-1] if gta_posts else None
-        last_slot_str = None
-        if last_post:
-            last_t = last_post.get("target_publish_at") or last_post.get("scheduled_publish_at") or last_post.get("due_at", 0)
-            last_slot_str = datetime.datetime.fromtimestamp(last_t).strftime("%Y-%m-%d %I:%M %p")
-
-        next_t = _next_slot("yt_UC5Ds3s_ijysctdQIULSRxOQ", cap=DAILY_CAP)
-        next_slot_str = datetime.datetime.fromtimestamp(next_t).strftime("%Y-%m-%d %I:%M %p")
+        accounts_data = {}
+        for acc in yt_accs:
+            aid = acc["id"]
+            aname = acc.get("name", aid)
+            acc_posts = [p for p in _posts if p.get("account") == aid and p.get("status") in OPEN + ("posted",)]
+            acc_posts.sort(key=lambda p: p.get("target_publish_at") or p.get("scheduled_publish_at") or p.get("due_at", 0))
+            last_p = acc_posts[-1] if acc_posts else None
+            last_slot_str = None
+            if last_p:
+                last_t = last_p.get("target_publish_at") or last_p.get("scheduled_publish_at") or last_p.get("due_at", 0)
+                last_slot_str = datetime.datetime.fromtimestamp(last_t).strftime("%Y-%m-%d %I:%M %p")
+            next_t = _next_slot(aid, cap=DAILY_CAP)
+            next_slot_str = datetime.datetime.fromtimestamp(next_t).strftime("%Y-%m-%d %I:%M %p")
+            accounts_data[aname] = {
+                "account_id": aid,
+                "last_scheduled_slot": last_slot_str,
+                "last_scheduled_title": last_p.get("title") if last_p else None,
+                "next_available_slot": next_slot_str,
+                "scheduled_count": len(acc_posts),
+            }
 
         state = {
             "daily_cap": DAILY_CAP,
@@ -154,9 +166,7 @@ def _update_schedule_state():
                 {"slot": 3, "time": "03:30 PM", "hour": 15, "minute": 30},
                 {"slot": 4, "time": "07:30 PM", "hour": 19, "minute": 30}
             ],
-            "last_scheduled_slot": last_slot_str,
-            "last_scheduled_title": last_post.get("title") if last_post else None,
-            "next_available_slot": next_slot_str,
+            "channels": accounts_data,
             "updated_at": now,
         }
         state_file.write_text(json.dumps(state, indent=2), encoding="utf-8")
