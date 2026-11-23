@@ -100,7 +100,7 @@ def _ydl(opts):
     # a channel or playlist link is answered as "a list" straight away, never walked video by video
     return yt_dlp.YoutubeDL({"noplaylist": True, "quiet": True, "no_warnings": True, "logger": _Quiet(),
                              "extract_flat": "in_playlist", "playlistend": 1, "socket_timeout": 20,
-                             "concurrent_fragment_downloads": 4, **opts})
+                             "concurrent_fragment_downloads": 4, "overwrites": True, "continue_dl": False, **opts})
 
 
 def _video_format(height):
@@ -244,6 +244,12 @@ def save_thumb(job_dir: Path, url: str = "", video: Path = None) -> bool:
 
 def download_audio(url: str, job_dir: Path, on_progress=None) -> Path:
     """Audio only: a few seconds even for long videos, and all the AI needs to pick clips."""
+    for f in job_dir.glob("audio_src*"):
+        try:
+            f.unlink(missing_ok=True)
+        except Exception:
+            pass
+
     def hook(d):
         total = d.get("total_bytes") or d.get("total_bytes_estimate")
         if on_progress and d.get("status") == "downloading" and total:
