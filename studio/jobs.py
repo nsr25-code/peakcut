@@ -889,6 +889,25 @@ def _pick_up_after_restart():
             save(j)
 
 
+def _disk_watcher():
+    """Continuously monitors disk for newly added queued jobs and feeds them to the worker queue."""
+    while True:
+        time.sleep(15)
+        try:
+            load_all()
+            with _q.cv:
+                queued_ids = set()
+                for q in _q.lines.values():
+                    for it in q:
+                        if it[0] == "job":
+                            queued_ids.add(it[1])
+            for j in all_jobs():
+                if j.get("status") == "queued" and j["id"] not in queued_ids:
+                    _q.put(("job", j["id"], None), user=j["user"])
+        except Exception:
+            pass
+
+
 def start():
     load.start()
     load_all()
@@ -897,3 +916,4 @@ def start():
         threading.Thread(target=_worker, daemon=True).start()
     threading.Thread(target=_worker, args=(True,), daemon=True).start()   # re-making a single clip never waits behind whole videos
     threading.Thread(target=_live_worker, daemon=True).start()
+    threading.Thread(target=_disk_watcher, daemon=True).start()
