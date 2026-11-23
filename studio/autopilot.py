@@ -414,7 +414,7 @@ def is_account_buffer_full(account_id: str, posts_data: list, buffer_days: int =
 # AUTOPILOT QUEUE DISPATCHER
 # ==========================================
 def check_and_queue():
-    """Checks buffer status for both channels and queues the top viral video for any channel with open slots."""
+    """Checks buffer status for both channels and queues the top viral video for the channel needing clips most."""
     uid = auth.local_user().id
     with ctx.as_user(uid):
         if jobs.busy_count() > 0:
@@ -431,107 +431,123 @@ def check_and_queue():
         except Exception:
             posts_data = []
 
-    # Priority 1: Check Free Fire Channel (NSR FF LIVE)
-    ff_buffer_full = is_account_buffer_full(FREEFIRE_ACCOUNT_ID, posts_data)
-    if not ff_buffer_full:
-        ff_creator = ensure_freefire_creator()
-        candidates = []
-        for ch in FREEFIRE_TARGET_CHANNELS:
-            videos = fetch_channel_videos(ch["url"], game_type="freefire", limit=3)
-            for v in videos:
-                if v["id"] not in processed:
-                    v["source_label"] = ch["name"]
-                    candidates.append(v)
-        for q in FREEFIRE_SEARCH_QUERIES:
-            videos = fetch_search_videos(q, game_type="freefire", limit=3)
-            for v in videos:
-                if v["id"] not in processed:
-                    v["source_label"] = v.get("channel") or "Global Search"
-                    candidates.append(v)
+    now = time.time()
+    gta_count = sum(1 for p in posts_data if p.get("account") == GTA_ACCOUNT_ID and p.get("status") in ("scheduled", "posted", "posting") and (p.get("target_publish_at") or p.get("scheduled_publish_at") or p.get("due_at", 0)) >= now - 60)
+    ff_count = sum(1 for p in posts_data if p.get("account") == FREEFIRE_ACCOUNT_ID and p.get("status") in ("scheduled", "posted", "posting") and (p.get("target_publish_at") or p.get("scheduled_publish_at") or p.get("due_at", 0)) >= now - 60)
 
-        if candidates:
-            candidates.sort(key=freefire_public_demand_score, reverse=True)
-            best = candidates[0]
-            vid = best["id"]
-            title = best["title"]
-            views = best.get("views", 0)
-            source_name = best.get("source_label", "Trending")
-            vurl = f"https://www.youtube.com/watch?v={vid}"
-
-            with ctx.as_user(uid):
-                jobs.create(
-                    source={"type": "url", "url": vurl, "name": title},
-                    options={
-                        "quality": 1080,
-                        "style": "bounce",
-                        "layout": "blur",
-                        "captions": True,
-                        "min_len": 20,
-                        "max_len": 60,
-                        "max_clips": 4,
-                        "auto_clips": True,
-                        "game": "Garena Free Fire",
-                    },
-                    creator=ff_creator["id"],
-                )
-            processed.add(vid)
-            state["processed_ids"] = list(processed)[-250:]
-            state["last_run"] = time.time()
-            state["last_title"] = title
-            _save_state(state)
-            print(f"\n[Autopilot] Queued top Free Fire video ({views:,} views) from {source_name}: {title} ({vurl})\n", flush=True)
-            return
-
-    # Priority 2: Check GTA Channel (Hype Drip Clips)
     gta_buffer_full = is_account_buffer_full(GTA_ACCOUNT_ID, posts_data)
-    if not gta_buffer_full:
-        gta_creator = ensure_gta_creator()
-        candidates = []
-        for ch in GTA_TARGET_CHANNELS:
-            videos = fetch_channel_videos(ch["url"], game_type="gta", limit=3)
-            for v in videos:
-                if v["id"] not in processed:
-                    v["source_label"] = ch["name"]
-                    candidates.append(v)
-        for q in GTA_SEARCH_QUERIES:
-            videos = fetch_search_videos(q, game_type="gta", limit=3)
-            for v in videos:
-                if v["id"] not in processed:
-                    v["source_label"] = v.get("channel") or "Global Search"
-                    candidates.append(v)
+    ff_buffer_full = is_account_buffer_full(FREEFIRE_ACCOUNT_ID, posts_data)
 
-        if candidates:
-            candidates.sort(key=gta_public_demand_score, reverse=True)
-            best = candidates[0]
-            vid = best["id"]
-            title = best["title"]
-            views = best.get("views", 0)
-            source_name = best.get("source_label", "Trending")
-            vurl = f"https://www.youtube.com/watch?v={vid}"
+    # Fair balancing: Prioritize the channel that currently has fewer future clips buffered
+    queue_order = []
+    if not gta_buffer_full and not ff_buffer_full:
+        if gta_count <= ff_count:
+            queue_order = ["gta", "freefire"]
+        else:
+            queue_order = ["freefire", "gta"]
+    elif not gta_buffer_full:
+        queue_order = ["gta"]
+    elif not ff_buffer_full:
+        queue_order = ["freefire"]
 
-            with ctx.as_user(uid):
-                jobs.create(
-                    source={"type": "url", "url": vurl, "name": title},
-                    options={
-                        "quality": 1080,
-                        "style": "bounce",
-                        "layout": "blur",
-                        "captions": True,
-                        "min_len": 20,
-                        "max_len": 60,
-                        "max_clips": 4,
-                        "auto_clips": True,
-                        "game": "Grand Theft Auto V",
-                    },
-                    creator=gta_creator["id"],
-                )
-            processed.add(vid)
-            state["processed_ids"] = list(processed)[-250:]
-            state["last_run"] = time.time()
-            state["last_title"] = title
-            _save_state(state)
-            print(f"\n[Autopilot] Queued top GTA video ({views:,} views) from {source_name}: {title} ({vurl})\n", flush=True)
-            return
+    for target in queue_order:
+        if target == "freefire":
+            ff_creator = ensure_freefire_creator()
+            candidates = []
+            for ch in FREEFIRE_TARGET_CHANNELS:
+                videos = fetch_channel_videos(ch["url"], game_type="freefire", limit=3)
+                for v in videos:
+                    if v["id"] not in processed:
+                        v["source_label"] = ch["name"]
+                        candidates.append(v)
+            for q in FREEFIRE_SEARCH_QUERIES:
+                videos = fetch_search_videos(q, game_type="freefire", limit=3)
+                for v in videos:
+                    if v["id"] not in processed:
+                        v["source_label"] = v.get("channel") or "Global Search"
+                        candidates.append(v)
+
+            if candidates:
+                candidates.sort(key=freefire_public_demand_score, reverse=True)
+                best = candidates[0]
+                vid = best["id"]
+                title = best["title"]
+                views = best.get("views", 0)
+                source_name = best.get("source_label", "Trending")
+                vurl = f"https://www.youtube.com/watch?v={vid}"
+
+                with ctx.as_user(uid):
+                    jobs.create(
+                        source={"type": "url", "url": vurl, "name": title},
+                        options={
+                            "quality": 1080,
+                            "style": "bounce",
+                            "layout": "blur",
+                            "captions": True,
+                            "min_len": 20,
+                            "max_len": 60,
+                            "max_clips": 4,
+                            "auto_clips": True,
+                            "game": "Garena Free Fire",
+                        },
+                        creator=ff_creator["id"],
+                    )
+                processed.add(vid)
+                state["processed_ids"] = list(processed)[-250:]
+                state["last_run"] = time.time()
+                state["last_title"] = title
+                _save_state(state)
+                print(f"\n[Autopilot] Queued top Free Fire video ({views:,} views) from {source_name}: {title} ({vurl})\n", flush=True)
+                return
+
+        elif target == "gta":
+            gta_creator = ensure_gta_creator()
+            candidates = []
+            for ch in GTA_TARGET_CHANNELS:
+                videos = fetch_channel_videos(ch["url"], game_type="gta", limit=3)
+                for v in videos:
+                    if v["id"] not in processed:
+                        v["source_label"] = ch["name"]
+                        candidates.append(v)
+            for q in GTA_SEARCH_QUERIES:
+                videos = fetch_search_videos(q, game_type="gta", limit=3)
+                for v in videos:
+                    if v["id"] not in processed:
+                        v["source_label"] = v.get("channel") or "Global Search"
+                        candidates.append(v)
+
+            if candidates:
+                candidates.sort(key=gta_public_demand_score, reverse=True)
+                best = candidates[0]
+                vid = best["id"]
+                title = best["title"]
+                views = best.get("views", 0)
+                source_name = best.get("source_label", "Trending")
+                vurl = f"https://www.youtube.com/watch?v={vid}"
+
+                with ctx.as_user(uid):
+                    jobs.create(
+                        source={"type": "url", "url": vurl, "name": title},
+                        options={
+                            "quality": 1080,
+                            "style": "bounce",
+                            "layout": "blur",
+                            "captions": True,
+                            "min_len": 20,
+                            "max_len": 60,
+                            "max_clips": 4,
+                            "auto_clips": True,
+                            "game": "Grand Theft Auto V",
+                        },
+                        creator=gta_creator["id"],
+                    )
+                processed.add(vid)
+                state["processed_ids"] = list(processed)[-250:]
+                state["last_run"] = time.time()
+                state["last_title"] = title
+                _save_state(state)
+                print(f"\n[Autopilot] Queued top GTA video ({views:,} views) from {source_name}: {title} ({vurl})\n", flush=True)
+                return
 
 
 # ==========================================
