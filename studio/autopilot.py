@@ -172,11 +172,11 @@ def freefire_public_demand_score(item: dict) -> float:
 # ==========================================
 def _read_state() -> dict:
     if not _FILE.exists():
-        return {"processed_ids": [], "last_run": 0.0, "last_title": ""}
+        return {"processed_ids": [], "last_run": 0.0, "last_title": "", "last_channel": ""}
     try:
         return json.loads(_FILE.read_text(encoding="utf-8"))
     except (ValueError, OSError):
-        return {"processed_ids": [], "last_run": 0.0, "last_title": ""}
+        return {"processed_ids": [], "last_run": 0.0, "last_title": "", "last_channel": ""}
 
 
 def _save_state(state: dict):
@@ -431,24 +431,23 @@ def check_and_queue():
         except Exception:
             posts_data = []
 
-    now = time.time()
-    gta_count = sum(1 for p in posts_data if p.get("account") == GTA_ACCOUNT_ID and p.get("status") in ("scheduled", "posted", "posting") and (p.get("target_publish_at") or p.get("scheduled_publish_at") or p.get("due_at", 0)) >= now - 60)
-    ff_count = sum(1 for p in posts_data if p.get("account") == FREEFIRE_ACCOUNT_ID and p.get("status") in ("scheduled", "posted", "posting") and (p.get("target_publish_at") or p.get("scheduled_publish_at") or p.get("due_at", 0)) >= now - 60)
-
     gta_buffer_full = is_account_buffer_full(GTA_ACCOUNT_ID, posts_data)
     ff_buffer_full = is_account_buffer_full(FREEFIRE_ACCOUNT_ID, posts_data)
 
-    # Fair balancing: Prioritize the channel that currently has fewer future clips buffered
+    last_chan = state.get("last_channel", "")
+    # Strict Round-Robin Alternation Rule (Equality for both channels):
+    # 1 video Channel 1 (GTA) -> 1 video Channel 2 (Free Fire) -> 1 video Channel 1 (GTA) -> 1 video Channel 2 (Free Fire)...
+    if last_chan == "gta":
+        preferred = ["freefire", "gta"]
+    else:
+        preferred = ["gta", "freefire"]
+
     queue_order = []
-    if not gta_buffer_full and not ff_buffer_full:
-        if gta_count <= ff_count:
-            queue_order = ["gta", "freefire"]
-        else:
-            queue_order = ["freefire", "gta"]
-    elif not gta_buffer_full:
-        queue_order = ["gta"]
-    elif not ff_buffer_full:
-        queue_order = ["freefire"]
+    for c in preferred:
+        if c == "gta" and not gta_buffer_full:
+            queue_order.append("gta")
+        elif c == "freefire" and not ff_buffer_full:
+            queue_order.append("freefire")
 
     for target in queue_order:
         if target == "freefire":
@@ -496,6 +495,7 @@ def check_and_queue():
                 state["processed_ids"] = list(processed)[-250:]
                 state["last_run"] = time.time()
                 state["last_title"] = title
+                state["last_channel"] = "freefire"
                 _save_state(state)
                 print(f"\n[Autopilot] Queued top Free Fire video ({views:,} views) from {source_name}: {title} ({vurl})\n", flush=True)
                 return
@@ -545,6 +545,7 @@ def check_and_queue():
                 state["processed_ids"] = list(processed)[-250:]
                 state["last_run"] = time.time()
                 state["last_title"] = title
+                state["last_channel"] = "gta"
                 _save_state(state)
                 print(f"\n[Autopilot] Queued top GTA video ({views:,} views) from {source_name}: {title} ({vurl})\n", flush=True)
                 return
