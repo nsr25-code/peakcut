@@ -105,8 +105,9 @@ def _next_slot(account_id, gap_min=105, cap=4):
         target_date = start_date + datetime.timedelta(days=offset)
         date_str = target_date.strftime("%Y-%m-%d")
 
-        # Find all GTA posts currently scheduled or posted for this date
-        day_posts = [p for p in _posts if _day(p.get("target_publish_at") or p.get("scheduled_publish_at") or p.get("due_at", 0)) == date_str
+        # Find all GTA posts currently scheduled or posted for this date FOR THIS ACCOUNT
+        day_posts = [p for p in _posts if p.get("account") == account_id
+                     and _day(p.get("target_publish_at") or p.get("scheduled_publish_at") or p.get("due_at", 0)) == date_str
                      and p.get("status") in OPEN + ("posted",) and is_gta_clip(p.get("title"))]
 
         # STRICT GATE: If this date already has >= cap (4) posts, this day is 100% full! Move to next date!
