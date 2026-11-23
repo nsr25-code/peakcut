@@ -8,6 +8,7 @@ import base64
 import hashlib
 import hmac
 import json
+import random
 import re
 import secrets
 import threading
@@ -26,7 +27,7 @@ SECRET_KEYS = ("discord_webhook", "telegram_token")
 SETTING_DEFAULTS = {"discord_webhook": "", "telegram_token": "", "telegram_chat": "", "paused": False,
                     "digest_hour": 8, "last_digest": "", "tour_done": False}
 
-YT_SCOPES = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly"
+YT_SCOPES = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl"
 IG = "https://graph.instagram.com"
 IG_UPLOAD = "https://rupload.facebook.com/ig-api-upload/v21.0"
 IG_SCOPES = "instagram_business_basic,instagram_business_content_publish"
@@ -393,6 +394,120 @@ def youtube_upload(acc, path: Path, title: str, description: str, tags: list, pr
             print(f"[YouTube] Thumbnail upload exception: {e}", flush=True)
 
     return vid, f"https://www.youtube.com/shorts/{vid}"
+
+
+def generate_engaging_comment(title: str, game: str = "") -> str:
+    """Generates a dynamic, highly contextual discussion/debate question comment
+    tailored specifically to the clip's title and game theme to maximize viewer replies."""
+    t = (title or "").upper()
+    g = (game or "").upper()
+
+    # Free Fire Comments
+    if "FREE FIRE" in g or "FREE FIRE" in t or any(k in t for k in ["FF", "CLUTCH", "HEADSHOT", "RAISTAR", "AJJUBHAI", "AMITBHAI", "BOOYAH", "AWM", "1V4", "1VS4", "GRANDMASTER"]):
+        if any(k in t for k in ["1V4", "1VS4", "CLUTCH"]):
+            options = [
+                "Bhai ye 1v4 clutch dekh kar kiska dimag hila? 1 se 10 me rating do! 🔥👇",
+                "Kya lagta hai ye pure skill tha ya samne walo ki galti? Sach batao 😂",
+                "Aisa clutch live match me kabhi kiya hai kya aapne? Apni best clutch story batao! 💬🔥",
+                "Is clutch me sabse tagda moment konsa laga? Timestamp comment karo! 👇🎯",
+            ]
+        elif any(k in t for k in ["HEADSHOT", "SPEED", "FAST", "RAISTAR", "GODMODE"]):
+            options = [
+                "Bhai ye banda sach me hacker hai ya pure reflex? Aap log kya sochte ho? 😱👇",
+                "Raistar level ki movement kis kis ko aati hai yahan? Hands up karo! 🙋‍♂️🔥",
+                "One-tap headshot marne ki trick kis kis ko aati hai? Apni sensitivity batao! 🎯",
+                "Ye red numbers dekh kar kiska dil khush ho gaya? Like aur comment thoko! 💥",
+            ]
+        elif any(k in t for k in ["FUNNY", "ANGRY", "FAIL", "WTF", "MOMENT", "LOL"]):
+            options = [
+                "Bhai end me jo hua kisi ne expect kiya tha kya? 😂 Apka favourite part konsa tha?",
+                "Amitbhai ka reaction notice kiya kya kisi ne? Haha end tak dekho! 💀👇",
+                "Aise dosto ke sath kaun kaun game khelta hai? Apne squad mate ko tag karo! 🤣",
+                "Bhai has has ke pet dard ho gaya 😂 Konsa scene sabse OP tha?",
+            ]
+        elif any(k in t for k in ["GRANDMASTER", "RANK", "HEROIC", "PUSH"]):
+            options = [
+                "Aapka abhi tak Free Fire me highest rank kya raha hai? Sab log apni rank drop karo! 🏆👇",
+                "Grandmaster push karna kis kis ka dream hai? Current rank batao sab log! 🔥",
+                "Rank match me camping karte ho ya rush gameplay? Honest answer dena! ⚔️",
+            ]
+        else:
+            options = [
+                "Is gameplay ko 1 se 10 me kitne stars doge? Comment me rate karo! ⭐👇",
+                "End tak kis kis ne dekha? Sabse shocking moment konsa laga aapko? 😱",
+                "Aap Free Fire kab se khel rahe ho? Year comment karo (2018, 2020, etc.)! 🎮",
+                "Agle video me kiska gameplay dekhna chahte ho? Name comment karo! 🔥👇",
+            ]
+        return random.choice(options)
+
+    # GTA Comments
+    else:
+        if any(k in t for k in ["POLICE", "5 STAR", "CHASE", "BUSTED"]):
+            options = [
+                "Agar 5-star police aapke peeche hoti toh aap kitni der survive kar paate? 💀👇",
+                "GTA me police se bachne ki sabse best jagah konsi hai? Tunnel ya Subway? 🚓💨",
+                "Bhai ye escape plan kisne banaya tha haha! 10/10 tactics! 🔥",
+            ]
+        elif any(k in t for k in ["STEAL", "STEALING", "SUPERCAR", "HEIST", "SECRET", "MYTH"]):
+            options = [
+                "GTA 5 me aapki all-time favourite supercar konsi hai? Name comment karo! 🏎️💨",
+                "Ye secret car location kis kis ko pehle se pata thi? Sach sach batao! 👀👇",
+                "GTA 6 me aisi aur crazy cars dekhna chahte ho kya? Comments me batao! 🔥",
+            ]
+        elif any(k in t for k in ["GTA 6", "VICE CITY", "LEAK"]):
+            options = [
+                "GTA 6 ke liye kitne excited ho? 1 se 100 me rating do! 🌴🔥",
+                "GTA 6 aane ke baad sabse pehle kaun sa kaam karoge? Comment karo! 🚗💨",
+                "Vice City ki vibes kis kis ko miss ho rahi thi? Reaction do! 🌊👇",
+            ]
+        elif any(k in t for k in ["STUNT", "IMPOSSIBLE", "BUMPER", "CAR", "RACE"]):
+            options = [
+                "Ye stunt 100% luck tha ya pure calculated physics? Sach batana! 🚗💨👇",
+                "GTA 5 me bumper cars khelna kis kis ka favourite hai? Hands up! 🙋‍♂️🚗",
+                "Agar aap is car me hote toh bach paate? Honest reaction do! 😂🔥",
+                "Is impossible stunt ko 1 se 10 me kitne marks doge? Rate karo! 🏆",
+            ]
+        else:
+            options = [
+                "Michael, Trevor aur Franklin me se aapka favourite character kaun hai? 💥👇",
+                "End tak kis kis ne dekha? Sabse funny part konsa laga? 😂",
+                "GTA 5 abhi tak kaun kaun khelta hai? PC ya PS5/Xbox? 🎮",
+                "Is scene ko 1 se 10 me rate karo sab log! Best comment pin hoga! 📌🔥",
+            ]
+        return random.choice(options)
+
+
+def youtube_post_comment(acc, video_id: str, comment_text: str) -> dict:
+    """Post an engaging creator comment on an uploaded YouTube video."""
+    if not video_id or not comment_text:
+        return {}
+    token = _yt_token(acc)
+    url = "https://www.googleapis.com/youtube/v3/commentThreads?part=snippet"
+    body = {
+        "snippet": {
+            "videoId": video_id,
+            "topLevelComment": {
+                "snippet": {
+                    "textOriginal": comment_text
+                }
+            }
+        }
+    }
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    try:
+        r = httpx.post(url, json=body, headers=headers, timeout=30)
+        if r.status_code in (200, 201):
+            print(f"[YouTube] Pinned-style engaging comment posted on video {video_id}: {comment_text[:50]}...", flush=True)
+            return r.json()
+        else:
+            print(f"[YouTube] Note: Comment post response {r.status_code}: {r.text[:150]}", flush=True)
+            return {}
+    except Exception as e:
+        print(f"[YouTube] Could not post comment on {video_id}: {e}", flush=True)
+        return {}
 
 
 def youtube_views(acc, ids: list) -> dict:

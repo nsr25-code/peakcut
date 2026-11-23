@@ -333,6 +333,14 @@ def _post(p):
         publish_time = target_slot if target_slot and target_slot > time.time() + 60 else None
         if acc["platform"] == "youtube":
             rid, url = accounts.youtube_upload(acc, path, title, cap + "\n\n#Shorts", clip.get("hashtags", []), creator["privacy"], publish_at=publish_time)
+            if rid:
+                try:
+                    game_type = creator.get("game", "")
+                    comment_text = accounts.generate_engaging_comment(title, game_type)
+                    accounts.youtube_post_comment(acc, rid, comment_text)
+                    p["comment"] = comment_text
+                except Exception as ce:
+                    print(f"[YouTube] Note on comment posting: {ce}", flush=True)
         elif acc["platform"] == "instagram":
             rid, url = accounts.instagram_upload(acc, path, f"{title}\n\n{cap}", job["id"])
         elif acc["platform"] == "tiktok":
