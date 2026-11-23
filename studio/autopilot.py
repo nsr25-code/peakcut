@@ -253,7 +253,7 @@ def check_and_queue():
             posts_data = json.loads(posts_file.read_text(encoding="utf-8"))
             for day_offset in range(BUFFER_DAYS_AHEAD):
                 check_date = (start_date + datetime.timedelta(days=day_offset)).strftime("%Y-%m-%d")
-                day_count = sum(1 for p in posts_data if time.strftime("%Y-%m-%d", time.localtime(p.get("due_at") or p.get("posted_at") or 0)) == check_date
+                day_count = sum(1 for p in posts_data if time.strftime("%Y-%m-%d", time.localtime(p.get("scheduled_publish_at") or p.get("due_at") or 0)) == check_date
                                 and p.get("status") in ("scheduled", "posted", "posting"))
                 if day_count < 5:
                     buffer_full = False

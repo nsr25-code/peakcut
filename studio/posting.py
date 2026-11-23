@@ -71,7 +71,7 @@ def _next_slot(account_id, gap_min=105, cap=5):
         date_str = target_date.strftime("%Y-%m-%d")
 
         # Find all posts currently scheduled or posted for this date
-        day_posts = [p for p in mine if _day(p.get("posted_at") or p.get("due_at", 0)) == date_str]
+        day_posts = [p for p in mine if _day(p.get("scheduled_publish_at") or p.get("due_at", 0)) == date_str]
 
         # QUICK CHECK: Does this particular date have fewer than cap (5) clips?
         if len(day_posts) < cap:
