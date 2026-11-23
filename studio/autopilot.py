@@ -251,11 +251,21 @@ def check_and_queue():
     if posts_file.exists():
         try:
             posts_data = json.loads(posts_file.read_text(encoding="utf-8"))
+            DAILY_SLOTS = [(9, 30), (12, 0), (14, 30), (17, 0), (19, 30)]
             for day_offset in range(BUFFER_DAYS_AHEAD):
-                check_date = (start_date + datetime.timedelta(days=day_offset)).strftime("%Y-%m-%d")
-                day_count = sum(1 for p in posts_data if time.strftime("%Y-%m-%d", time.localtime(p.get("scheduled_publish_at") or p.get("due_at") or 0)) == check_date
-                                and p.get("status") in ("scheduled", "posted", "posting"))
-                if day_count < 5:
+                check_date = start_date + datetime.timedelta(days=day_offset)
+                date_str = check_date.strftime("%Y-%m-%d")
+                occupied_count = 0
+                for h, m in DAILY_SLOTS:
+                    slot_t = time.mktime((check_date.year, check_date.month, check_date.day, h, m, 0, 0, 0, -1))
+                    is_occ = any(
+                        p.get("status") in ("scheduled", "posted", "posting")
+                        and abs((p.get("target_publish_at") or p.get("scheduled_publish_at") or p.get("due_at") or 0) - slot_t) <= 45 * 60
+                        for p in posts_data
+                    )
+                    if is_occ or (day_offset == 0 and slot_t <= now + 120):
+                        occupied_count += 1
+                if occupied_count < 5:
                     buffer_full = False
                     break
         except Exception:

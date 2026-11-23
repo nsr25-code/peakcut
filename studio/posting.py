@@ -55,36 +55,57 @@ def _mirror(p):
 DAILY_SLOTS = [(9, 30), (12, 0), (14, 30), (17, 0), (19, 30)]
 
 
+def is_gta_clip(title: str) -> bool:
+    t = (title or "").upper()
+    return any(k in t for k in ["GTA", "GRAND THEFT AUTO", "VICE CITY", "LOS SANTOS", "TREVOR", "FRANKLIN", "MICHAEL", "SUPERCAR", "BIGFOOT", "CRAB", "YACHT", "STUNT"])
+
+
+def _is_slot_occupied(account_id: str, slot_timestamp: float, margin_seconds: int = 45 * 60) -> bool:
+    """Checks whether an existing post is already scheduled or posted for this slot."""
+    for p in _mine():
+        if p.get("account") != account_id:
+            continue
+        if p.get("status") not in OPEN + ("posted",):
+            continue
+        if not is_gta_clip(p.get("title")):
+            continue
+        pub_t = p.get("target_publish_at") or p.get("scheduled_publish_at") or p.get("due_at", 0)
+        if abs(pub_t - slot_timestamp) <= margin_seconds:
+            return True
+    return False
+
+
 def _next_slot(account_id, gap_min=105, cap=5):
-    """Strict Sequential Date Gate:
+    """Strict Per-Day Fixed Slot Allocator:
     Checks dates sequentially starting from today onwards.
-    Verifies that ALL clips for Date D (up to cap=5) are scheduled before ANY clip moves to Date D+1.
-    A particular date must be 100% full before advancing to the next day."""
+    5 fixed daily slots:
+      Slot 1: 09:30 AM (9, 30)
+      Slot 2: 12:00 PM (12, 0)
+      Slot 3: 02:30 PM (14, 30)
+      Slot 4: 05:00 PM (17, 0)
+      Slot 5: 07:30 PM (19, 30)
+
+    1. Checks which slots are ALREADY scheduled or posted on each date.
+    2. Any occupied slot is SKIPPED to prevent duplicate/same-time scheduling.
+    3. If target_date is today and a slot's time has already passed in real-time, it is skipped.
+    4. Picks the FIRST unoccupied valid slot.
+    5. Only when all slots for Date D are completely full does it move to Date D+1.
+    """
     import datetime
-    mine = [p for p in _mine() if p.get("account") == account_id and p.get("status") in OPEN + ("posted",)]
     now = time.time()
     now_lt = time.localtime(now)
     start_date = datetime.date(now_lt.tm_year, now_lt.tm_mon, now_lt.tm_mday)
 
     for offset in range(30):
         target_date = start_date + datetime.timedelta(days=offset)
-        date_str = target_date.strftime("%Y-%m-%d")
-
-        # Find all posts currently scheduled or posted for this date
-        day_posts = [p for p in mine if _day(p.get("scheduled_publish_at") or p.get("due_at", 0)) == date_str]
-
-        # QUICK CHECK: Does this particular date have fewer than cap (5) clips?
-        if len(day_posts) < cap:
-            # Date D is NOT yet full! Fill this date first before moving to Date D+1.
-            slot_idx = len(day_posts)
-            h, m = DAILY_SLOTS[min(slot_idx, len(DAILY_SLOTS) - 1)]
+        for h, m in DAILY_SLOTS:
             slot_t = time.mktime((target_date.year, target_date.month, target_date.day, h, m, 0, 0, 0, -1))
-
-            # If it's today and the slot time has already passed, schedule after last today post + gap
-            if target_date == start_date and slot_t <= now + 60:
-                last_due = max((p.get("due_at", 0) for p in day_posts), default=now)
-                slot_t = max(now + 300, last_due + gap_min * 60)
-
+            # If today and slot time has already passed in real-time (with 2m buffer), cannot schedule in past
+            if target_date == start_date and slot_t <= now + 120:
+                continue
+            # If slot is already occupied by an existing post, skip it
+            if _is_slot_occupied(account_id, slot_t):
+                continue
             return slot_t
 
     return now + 86400 * 30
@@ -119,7 +140,8 @@ def enqueue(job, clip, account_ids, now=False) -> list:
             due = time.time() if now else _next_slot(aid, c["post_gap_min"], c["daily_cap"])
             p = {"id": secrets.token_hex(8), "user": ctx.uid(), "job": job["id"], "clip": clip["id"], "creator": job["creator"],
                  "account": aid, "account_name": acc["name"], "platform": acc["platform"], "status": "scheduled",
-                 "due_at": due, "created": time.time(), "title": clip.get("title") or clip.get("hook") or "Clip",
+                 "due_at": due, "target_publish_at": due, "scheduled_publish_at": due, "created": time.time(),
+                 "title": clip.get("title") or clip.get("hook") or "Clip",
                  "score": clip.get("score", 0), "tries": 0, "url": "", "remote_id": "", "error": None, "views": None}
             _posts.append(p)
             made.append(p)
@@ -176,7 +198,8 @@ def _post(p):
         path = Path(job["dir"]) / "clips" / clip["file"]
         creator = creators.get(job["creator"]) or dict(creators.DEFAULTS, name="clips")
         title, cap = clip.get("title") or clip.get("hook") or "Clip", _caption(clip, creator)
-        publish_time = p.get("due_at") if p.get("due_at", 0) > time.time() + 60 else None
+        target_slot = p.get("target_publish_at") or p.get("scheduled_publish_at") or p.get("due_at")
+        publish_time = target_slot if target_slot and target_slot > time.time() + 60 else None
         if acc["platform"] == "youtube":
             rid, url = accounts.youtube_upload(acc, path, title, cap + "\n\n#Shorts", clip.get("hashtags", []), creator["privacy"], publish_at=publish_time)
         elif acc["platform"] == "instagram":
@@ -185,7 +208,7 @@ def _post(p):
             rid, url = accounts.tiktok_upload(acc, path, f"{title}\n\n{cap}", creator["privacy"])
         else:
             raise RuntimeError("That kind of account is no longer supported.")
-        p.update(status="posted", posted_at=time.time(), remote_id=rid, url=url, error=None, scheduled_publish_at=publish_time)
+        p.update(status="posted", posted_at=time.time(), remote_id=rid, url=url, error=None, scheduled_publish_at=publish_time, target_publish_at=target_slot)
         if publish_time:
             dt_str = time.strftime('%Y-%m-%d %H:%M', time.localtime(publish_time))
             creators.log(p["creator"], f"Cloud-Scheduled on {acc['name']} for {dt_str}: {title}")
@@ -202,15 +225,15 @@ def _post(p):
         p["error"] = str(e)[-300:]
         err_str = str(e).lower()
         if "getaddrinfo" in err_str or "connection" in err_str or "timeout" in err_str or "temporary" in err_str:
-            # Network hiccup: keep scheduled and retry in 3 minutes
-            p.update(status="scheduled", due_at=time.time() + 180)
+            # Network hiccup: keep scheduled and retry upload in 3 minutes without corrupting target slot time!
+            p.update(status="scheduled", retry_at=time.time() + 180)
             creators.log(p["creator"], f"Network connection retry for {p['account_name']}: {p['error'][:100]}")
         elif "quotaexceeded" in err_str or "rate limit" in err_str:
-            # Daily quota limit: resume in 1 hour / next window
-            p.update(status="scheduled", due_at=time.time() + 3600)
+            # Daily quota limit: resume in 1 hour without corrupting target slot time!
+            p.update(status="scheduled", retry_at=time.time() + 3600)
             creators.log(p["creator"], f"YouTube daily quota limit reached, will resume in 1h: {title}")
         elif p["tries"] < 5 and clip and acc:
-            p.update(status="scheduled", due_at=time.time() + 300)
+            p.update(status="scheduled", retry_at=time.time() + 300)
         else:
             p["status"] = "failed"
             creators.log(p["creator"], f"Post failed on {p['account_name']}: {p['error']}")
@@ -238,15 +261,18 @@ def _yt_uploaded_today_count():
 def _run():
     while True:
         time.sleep(15)
-        # Immediate due posts
-        due = [p for p in list(_posts) if p.get("status") == "scheduled" and p.get("due_at", 0) <= time.time() and p.get("user") and not p.get("remote_id")]
+        now = time.time()
+        # Immediate due posts (where retry timer has passed AND due_at has arrived)
+        due = [p for p in list(_posts) if p.get("status") == "scheduled" and p.get("user") and not p.get("remote_id")
+               and p.get("retry_at", 0) <= now and p.get("due_at", 0) <= now]
 
-        # Native Cloud-Scheduling: Pick advance-scheduled YouTube posts for today's quota batch (up to 4 per day)
+        # Native Cloud-Scheduling: Pick advance-scheduled YouTube posts for today's quota batch (up to 5 per day)
         current_today = _yt_uploaded_today_count()
         if current_today < DAILY_YOUTUBE_UPLOADS:
             advance = [p for p in list(_posts) if p.get("status") == "scheduled" and p.get("platform") == "youtube"
-                       and p.get("user") and not p.get("remote_id") and p.get("score", 0) >= 90]
-            advance.sort(key=lambda p: p.get("due_at", 0))
+                       and p.get("user") and not p.get("remote_id") and p.get("score", 0) >= 90
+                       and p.get("retry_at", 0) <= now]
+            advance.sort(key=lambda p: p.get("target_publish_at") or p.get("due_at", 0))
             for p in advance:
                 if p not in due and (current_today + len(due)) < DAILY_YOUTUBE_UPLOADS:
                     due.append(p)
