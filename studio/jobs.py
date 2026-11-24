@@ -510,14 +510,28 @@ def _piece_again(job, clip):
     job.setdefault("height", meta["height"])
 
 
+_section_lock = threading.Lock()
+
+
 def _fetch_piece(job, clip, full_audio):
-    """Long videos: download just this clip's stretch and pin down exactly where it starts."""
+    """Download just this clip's stretch and pin down exactly where it starts."""
     d = Path(job["dir"])
     o = job["options"]
+    want = max(0.0, clip["start"] - PAD)
+    until = min(job["duration"], clip["end"] + PAD) if job.get("duration") else clip["end"] + PAD
+    piece = None
+    with _section_lock:
+        for attempt in range(3):
+            try:
+                piece = media.download_section(job["source"]["url"], d / "clips", f"{clip['id']}.src", want,
+                                               until, int(o["quality"]))
+                break
+            except Exception as e:
+                if attempt == 2:
+                    clip.update(status="error", error=f"Could not fetch this part of the video: {safe.friendly(e, 250)}")
+                    return
+                time.sleep(1.0)
     try:
-        want = max(0.0, clip["start"] - PAD)
-        piece = media.download_section(job["source"]["url"], d / "clips", f"{clip['id']}.src", want,
-                                       min(job["duration"], clip["end"] + PAD), int(o["quality"]))
         wav = d / "clips" / f"{clip['id']}.wav"
         media.extract_audio(piece, wav)
         part = media.load_audio(wav)
@@ -529,7 +543,7 @@ def _fetch_piece(job, clip, full_audio):
         job.setdefault("width", meta["width"])
         job.setdefault("height", meta["height"])
     except Exception as e:  # noqa: BLE001
-        clip.update(status="error", error=f"Could not fetch this part of the video: {safe.friendly(e, 250)}")
+        clip.update(status="error", error=f"Could not process this part of the video: {safe.friendly(e, 250)}")
 
 
 BLOCK = 10 * 60         # long videos are transcribed and clipped one block at a time
@@ -905,11 +919,15 @@ def _worker(quick_only=False):
         except Exception as e:  # noqa: BLE001
             (Path(job["dir"]) / "error.log").write_text(traceback.format_exc(), encoding="utf-8")
             if kind == "job":
-                for c in job["clips"]:
-                    if c.get("status") in ("queued", "rendering"):
-                        c.update(status="error", error="The video stopped before this clip was made.")
-                _set(job, status="error", error=safe.friendly(e), stage="Stopped")
-                creators.log(job["creator"], f"Video failed: {safe.friendly(e)[:200]}")
+                done_clips = [c for c in job.get("clips", []) if c.get("status") == "done"]
+                if done_clips:
+                    _set(job, status="done", stage="Done", progress=1.0)
+                else:
+                    for c in job["clips"]:
+                        if c.get("status") in ("queued", "rendering"):
+                            c.update(status="error", error="The video stopped before this clip was made.")
+                    _set(job, status="error", error=safe.friendly(e), stage="Stopped")
+                    creators.log(job["creator"], f"Video failed: {safe.friendly(e)[:200]}")
         finally:
             ctx._uid.reset(token)
             if kind == "job":
