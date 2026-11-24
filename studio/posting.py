@@ -461,11 +461,12 @@ def _run():
                     game_type = c.get("game", "")
                     comment_text = p.get("comment") or accounts.generate_engaging_comment(p.get("title", ""), game_type)
                     res = accounts.youtube_post_comment(acc, p["remote_id"], comment_text)
-                    if res:
-                        with _lock:
-                            p["comment_posted"] = True
+                    with _lock:
+                        p["comment_posted"] = True
+                        if res:
                             p["comment"] = comment_text
-                        _save()
+                    _save()
+                    if res:
                         creators.log(p.get("creator", ""), f"Auto-posted engaging comment on now-live video: {comment_text[:50]}")
             except Exception as ce:
                 print(f"[YouTube] Auto-comment note for {p.get('remote_id')}: {ce}", flush=True)
