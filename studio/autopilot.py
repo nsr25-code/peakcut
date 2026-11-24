@@ -421,6 +421,8 @@ def check_and_queue():
             return  # a video is already rendering, wait for completion
 
     state = _read_state()
+    if state.get("paused"):
+        return
     processed = set(state.get("processed_ids", []))
 
     posts_file = config.DATA_DIR / "posts.json"
