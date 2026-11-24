@@ -350,14 +350,12 @@ def _post(p):
                 try:
                     game_type = creator.get("game", "")
                     comment_text = accounts.generate_engaging_comment(title, game_type)
-                    accounts.youtube_post_comment(acc, rid, comment_text)
                     p["comment"] = comment_text
+                    if not publish_time or publish_time <= time.time():
+                        res = accounts.youtube_post_comment(acc, rid, comment_text)
+                        if res:
+                            p["comment_posted"] = True
                 except Exception as ce:
-                    try:
-                        from . import healer
-                        healer.record_pending_comment(rid, comment_text)
-                    except Exception:
-                        pass
                     print(f"[YouTube] Note on comment posting (queued for when video goes live): {ce}", flush=True)
         elif acc["platform"] == "instagram":
             rid, url = accounts.instagram_upload(acc, path, f"{title}\n\n{cap}", job["id"])
@@ -447,6 +445,30 @@ def _run():
                     _post(p)
             except Exception:  # noqa: BLE001
                 pass
+
+        # Auto-Comment on Live Videos: whenever scheduled publish time has arrived and video is public,
+        # post the engaging creator comment automatically without user intervention!
+        now_live = [p for p in list(_posts) if p.get("status") == "posted" and p.get("platform") == "youtube"
+                    and p.get("remote_id") and not p.get("comment_posted")
+                    and (p.get("target_publish_at") or p.get("scheduled_publish_at") or p.get("due_at") or 0) <= now]
+        for p in now_live:
+            try:
+                with ctx.as_user(p.get("user", "u_local")):
+                    acc = accounts.get(p.get("account"))
+                    if not acc:
+                        continue
+                    c = creators.get(p.get("creator")) or {}
+                    game_type = c.get("game", "")
+                    comment_text = p.get("comment") or accounts.generate_engaging_comment(p.get("title", ""), game_type)
+                    res = accounts.youtube_post_comment(acc, p["remote_id"], comment_text)
+                    if res:
+                        with _lock:
+                            p["comment_posted"] = True
+                            p["comment"] = comment_text
+                        _save()
+                        creators.log(p.get("creator", ""), f"Auto-posted engaging comment on now-live video: {comment_text[:50]}")
+            except Exception as ce:
+                print(f"[YouTube] Auto-comment note for {p.get('remote_id')}: {ce}", flush=True)
 
 
 def _stats_for(recent):
