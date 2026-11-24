@@ -344,7 +344,34 @@ def _live_worker():
             traceback.print_exc()
 
 
+_cancelled = set()
+
+
+def is_cancelled(jid: str) -> bool:
+    return jid in _cancelled
+
+
+def cancel(jid: str) -> bool:
+    with _lock:
+        job = _jobs.get(jid)
+        _cancelled.add(jid)
+        if job:
+            _set(job, status="cancelled", stage="Cancelled by user", error="Cancelled by user")
+            try:
+                d = Path(job["dir"])
+                for pattern in ("*.src.mp4", "*.part", "*.ytdl", "*.wav", "source.*"):
+                    for f in d.glob(pattern):
+                        f.unlink(missing_ok=True)
+                    for f in (d / "clips").glob(pattern):
+                        f.unlink(missing_ok=True)
+            except Exception:
+                pass
+            return True
+        return False
+
+
 def delete(jid):
+    cancel(jid)
     with _lock:
         job = _jobs.pop(jid, None)
         if job:
@@ -451,6 +478,10 @@ def _wait_for_clips(job, futures, began, workers):
     left, given_up = list(futures), 0
     late = "This clip took too long and was stopped. Open it and press Save and re-make to try again."
     while left:
+        if is_cancelled(job["id"]):
+            for f, clip in left:
+                f.cancel()
+            break
         still = []
         for f, clip in left:
             if f.done():
@@ -637,6 +668,8 @@ def _run_job(job):
         info = media.probe(source_file)
         _set(job, source_path=str(source_file), width=info["width"], height=info["height"], duration=info["duration"])
         audio_file = source_file
+        if is_cancelled(job["id"]):
+            return
     else:
         pieces, audio_file = False, Path(src["path"])
         info = media.probe(audio_file)
@@ -649,6 +682,8 @@ def _run_job(job):
     media.extract_audio(audio_file, wav)
     audio = media.load_audio(wav)
     wav.unlink(missing_ok=True)
+    if is_cancelled(job["id"]):
+        return
     if not job["duration"]:
         job["duration"] = len(audio) / 16000
     lo = int((o["range_start"] or 0) * 16000)
@@ -691,6 +726,8 @@ def _run_job(job):
     began = {}      # clip id -> when work on it started
 
     def make(clip, words_now):
+        if is_cancelled(job["id"]):
+            return
         began[clip["id"]] = time.time()
         if src["type"] == "url" and (pieces or not whole_video()):
             _fetch_piece(job, clip, audio)
@@ -879,6 +916,8 @@ def _run_job(job):
                 f.unlink(missing_ok=True)
     except Exception:
         pass
+    if is_cancelled(job["id"]):
+        return
     job["ai"] = {"model": model, "tokens": tokens, "log": notes[-5:],
                  "note": "The AI was unavailable, so clips were picked by loudness only." if clips and not model else ""}
     stage = "Done" if clips else "Done, but nothing clip-worthy was found"

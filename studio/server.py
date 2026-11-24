@@ -950,9 +950,18 @@ def rerender(jid: str, cid: str, body: dict = Body(...)):
 @app.delete("/api/jobs/{jid}")
 def delete_job(jid: str):
     job = _job_or_404(jid)
-    if job["status"] in ("queued", "running", "live") or jid in live.SESSIONS:
-        raise HTTPException(409, "This is still being worked on. Stop it or wait for it to finish first.")
+    if jid in live.SESSIONS:
+        live.stop(jid)
     jobs.delete(jid)
+    return {"ok": True}
+
+
+@app.post("/api/jobs/{jid}/cancel")
+def cancel_job(jid: str):
+    job = _job_or_404(jid)
+    if jid in live.SESSIONS:
+        live.stop(jid)
+    jobs.cancel(jid)
     return {"ok": True}
 
 
