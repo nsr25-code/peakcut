@@ -87,7 +87,7 @@ def heal_failed_jobs():
                         job["stage"] = "Auto-healed and re-queued"
                         jpath.write_text(json.dumps(job, indent=1), encoding="utf-8")
                         jobs._jobs[job["id"]] = job
-                        jobs._q.put("job", job["id"], None, high_priority=True)
+                        jobs.enqueue(job)
                         continue
 
                 # If unrecoverable download / bot-check error, cleanly discard and queue next viral video
@@ -133,7 +133,7 @@ def heal_stuck_jobs():
                 job["stage"] = "Recovered from freeze, resuming..."
                 jpath.write_text(json.dumps(job, indent=1), encoding="utf-8")
                 jobs._jobs[job["id"]] = job
-                jobs._q.put("job", job["id"], None, high_priority=True)
+                jobs.enqueue(job)
         except Exception:
             pass
 
