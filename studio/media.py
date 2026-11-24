@@ -303,6 +303,11 @@ def download_audio(url: str, job_dir: Path, on_progress=None) -> Path:
 
 def download(url: str, job_dir: Path, height=720) -> Path:
     """The whole video. Used for shorter videos, where this is quicker than fetching pieces."""
+    for f in job_dir.glob("source*"):
+        try:
+            f.unlink(missing_ok=True)
+        except Exception:
+            pass
     try:
         with _youtube_guard(url), _ydl({"format": _video_format(height), "merge_output_format": "mp4",
                                         "outtmpl": str(job_dir / "source.%(ext)s")}) as ydl:
@@ -318,6 +323,12 @@ def download_section(url: str, out_dir: Path, stem: str, start: float, end: floa
     exact=True the cut is made at exactly `start` instead (slower), for when there is nothing to match against."""
     from yt_dlp.utils import download_range_func
     out_dir.mkdir(parents=True, exist_ok=True)
+    # Prevent HTTP 416 range errors by cleaning up stale partial slices
+    for stale in out_dir.glob(stem + ".*"):
+        try:
+            stale.unlink(missing_ok=True)
+        except Exception:
+            pass
     opts = {"format": _video_format(height), "merge_output_format": "mp4", "outtmpl": str(out_dir / (stem + ".%(ext)s")),
             "download_ranges": download_range_func(None, [(max(0.0, start), end)])}
     if exact:

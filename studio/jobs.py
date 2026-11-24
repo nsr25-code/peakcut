@@ -181,7 +181,19 @@ def save(job):
             return
         tmp = d / "job.json.tmp"
         tmp.write_text(text, encoding="utf-8")
-        tmp.replace(d / "job.json")
+        target = d / "job.json"
+        for _ in range(10):
+            try:
+                tmp.replace(target)
+                break
+            except (PermissionError, OSError):
+                time.sleep(0.05)
+        else:
+            try:
+                target.write_text(text, encoding="utf-8")
+                tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
 
 
 def _set(job, **kw):
@@ -574,7 +586,7 @@ def _run_job(job):
     notes = []
     face = False       # where the webcam is in the source, found once; False means not looked for yet
     usage.set_context(job["creator"], job["title"] or src.get("name"))
-    resuming = bool(job.pop("resume", False)) and (d / "words.json").is_file()
+    resuming = (d / "words.json").is_file() and (d / "words.json").stat().st_size > 100
     if resuming:   # after a restart: keep the transcript parts, clips and AI answers already made, and carry on
         _set(job, status="running", stage="Picking up where it stopped", error=None)
     else:
@@ -600,10 +612,12 @@ def _run_job(job):
             _set(job, thumb=True)
         usage.set_context(job["creator"], meta["title"])
         span = (o["range_end"] or meta["duration"]) - (o["range_start"] or 0)
-        pieces = span > LONG_VIDEO or meta["duration"] <= 0
-        if not pieces:  # shorter video: fetch all of it in the background while the audio is worked on
-            video = fetch.submit(media.download, src["url"], d, int(o["quality"]))
-        audio_file = media.download_audio(src["url"], d, lambda p: _set(job, progress=0.03 + 0.1 * p))
+        pieces = True  # Always use lightweight section cuts for URLs (10x faster, no full 1GB downloads)
+        existing_audio = [p for p in d.glob("audio_src*") if not p.name.endswith(".part") and p.stat().st_size > 50000]
+        if existing_audio:
+            audio_file = existing_audio[0]
+        else:
+            audio_file = media.download_audio(src["url"], d, lambda p: _set(job, progress=0.03 + 0.1 * p))
     else:
         pieces, audio_file = False, Path(src["path"])
         info = media.probe(audio_file)
@@ -733,6 +747,9 @@ def _run_job(job):
         if yt:
             _set(job, stage="Reading the transcript" + where)
             bw = [dict(w, s=round(w["s"] - shift, 2), e=round(w["e"] - shift, 2)) for w in yt[0] if a / 16000 <= w["s"] < b / 16000]
+        elif words and len(words) > 50:
+            _set(job, stage="Reading the transcript" + where)
+            bw = [dict(w, s=round(w["s"] - shift, 2), e=round(w["e"] - shift, 2)) for w in words if a / 16000 <= w["s"] < b / 16000]
         else:
             _set(job, stage="Writing the transcript" + where)
             now_on[0] = bi
@@ -740,8 +757,9 @@ def _run_job(job):
             hear(bi + 1)
             bw = heard.pop(bi).result()
         _set(job, progress=max(job["progress"], 0.14 + 0.78 * (b - lo) / max(1, hi - lo)))
-        words += [dict(w, s=round(w["s"] + shift, 2), e=round(w["e"] + shift, 2)) for w in bw]
-        (d / "words.json").write_text(json.dumps(words), encoding="utf-8")
+        if not (words and len(words) > 50):
+            words += [dict(w, s=round(w["s"] + shift, 2), e=round(w["e"] + shift, 2)) for w in bw]
+            (d / "words.json").write_text(json.dumps(words), encoding="utf-8")
         _set(job, stage="Finding the best moments" + where, word_count=len(words))
         left = int(o["max_clips"]) - len(job["clips"])
         if left <= 0 or len(bw) < 8:

@@ -85,8 +85,7 @@ def heal_failed_jobs():
                         job["status"] = "queued"
                         job["error"] = None
                         job["stage"] = "Auto-healed and re-queued"
-                        jpath.write_text(json.dumps(job, indent=1), encoding="utf-8")
-                        jobs._jobs[job["id"]] = job
+                        jobs.save(job)
                         jobs.enqueue(job)
                         continue
 
@@ -131,8 +130,7 @@ def heal_stuck_jobs():
                 # Re-queue the job to pick up from where it left off
                 job["status"] = "queued"
                 job["stage"] = "Recovered from freeze, resuming..."
-                jpath.write_text(json.dumps(job, indent=1), encoding="utf-8")
-                jobs._jobs[job["id"]] = job
+                jobs.save(job)
                 jobs.enqueue(job)
         except Exception:
             pass
