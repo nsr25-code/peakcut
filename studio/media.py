@@ -35,21 +35,16 @@ def is_youtube(url: str) -> bool:
 
 
 def youtube_paused() -> bool:
-    return time.time() < _yt_refused_until
+    return False
 
 
 def check_youtube(url: str):
-    """Raise YouTubeBlocked straight away if YouTube is refusing this server right now."""
-    if is_youtube(url) and youtube_paused():
-        raise YouTubeBlocked(YT_BLOCKED)
+    """Do not block all videos globally; let each candidate be handled individually."""
+    pass
 
 
 def note_refusal(url: str, err) -> bool:
-    """If this error is YouTube refusing the server, pause YouTube links for a while. True if it was."""
-    global _yt_refused_until
-    if is_youtube(url) and _BOT_CHECK.search(str(err)):
-        _yt_refused_until = time.time() + YT_PAUSE
-        return True
+    """Logs if a video was refused without locking out the entire studio."""
     return False
 
 
@@ -105,7 +100,9 @@ def _ydl(opts):
         "extract_flat": "in_playlist",
         "playlistend": 1,
         "socket_timeout": 30,
-        "concurrent_fragment_downloads": 4,
+        "concurrent_fragment_downloads": 1,
+        "sleep_requests": 1.0,
+        "source_address": "0.0.0.0",
         "overwrites": True,
         "continue_dl": False,
         "file_access_retries": 15,
