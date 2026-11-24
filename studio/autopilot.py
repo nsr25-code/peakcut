@@ -333,7 +333,7 @@ def fetch_channel_videos(url: str, game_type: str = "gta", limit: int = 5) -> li
                 desc = d.get("description", "")
                 dur = float(d.get("duration") or 0)
                 is_match = is_freefire_video(title, desc) if game_type == "freefire" else is_gta_video(title)
-                if vid and is_match and (dur >= 300 or dur == 0):
+                if vid and is_match and ((300 <= dur <= 2400) or dur == 0):
                     items.append({
                         "id": vid,
                         "title": title,
@@ -367,7 +367,7 @@ def fetch_search_videos(query: str, game_type: str = "gta", limit: int = 5) -> l
                 desc = d.get("description", "")
                 dur = float(d.get("duration") or 0)
                 is_match = is_freefire_video(title, desc) if game_type == "freefire" else is_gta_video(title)
-                if vid and is_match and (dur >= 300 or dur == 0):
+                if vid and is_match and ((300 <= dur <= 2400) or dur == 0):
                     items.append({
                         "id": vid,
                         "title": title,

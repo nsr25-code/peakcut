@@ -626,12 +626,17 @@ def _run_job(job):
             _set(job, thumb=True)
         usage.set_context(job["creator"], meta["title"])
         span = (o["range_end"] or meta["duration"]) - (o["range_start"] or 0)
-        pieces = True  # Always use lightweight section cuts for URLs (10x faster, no full 1GB downloads)
-        existing_audio = [p for p in d.glob("audio_src*") if not p.name.endswith(".part") and p.stat().st_size > 50000]
-        if existing_audio:
-            audio_file = existing_audio[0]
+        pieces = False  # Sequential clean pipeline: full video downloaded upfront, sliced locally via FFmpeg
+        existing_source = [p for p in d.glob("source.*") if p.suffix not in (".part", ".ytdl") and p.stat().st_size > 500000]
+        if existing_source:
+            source_file = existing_source[0]
         else:
-            audio_file = media.download_audio(src["url"], d, lambda p: _set(job, progress=0.03 + 0.1 * p))
+            _set(job, stage="Downloading full video (sequential pipeline)", progress=0.03)
+            source_file = media.download(src["url"], d, int(o.get("quality", 720)),
+                                         on_progress=lambda p: _set(job, progress=0.03 + 0.12 * p))
+        info = media.probe(source_file)
+        _set(job, source_path=str(source_file), width=info["width"], height=info["height"], duration=info["duration"])
+        audio_file = source_file
     else:
         pieces, audio_file = False, Path(src["path"])
         info = media.probe(audio_file)
@@ -644,8 +649,6 @@ def _run_job(job):
     media.extract_audio(audio_file, wav)
     audio = media.load_audio(wav)
     wav.unlink(missing_ok=True)
-    if src["type"] == "url":
-        audio_file.unlink(missing_ok=True)
     if not job["duration"]:
         job["duration"] = len(audio) / 16000
     lo = int((o["range_start"] or 0) * 16000)
@@ -662,18 +665,21 @@ def _run_job(job):
     vlock, vstate = threading.Lock(), {}
 
     def whole_video():
-        """Wait for the background download once; retry it, or give up and use pieces."""
+        """Ensure the local source video path is set and valid."""
         with vlock:
             if "path" not in vstate:
                 path = None
-                try:
-                    path = video.result()
-                except Exception as e:  # noqa: BLE001 - sites sometimes refuse a download
-                    notes.append(f"Video download refused once ({str(e)[-80:]}), retrying")
+                if job.get("source_path") and Path(job["source_path"]).is_file():
+                    path = Path(job["source_path"])
+                elif video:
                     try:
-                        path = media.download(src["url"], d, int(o["quality"]))
-                    except Exception as e2:  # noqa: BLE001
-                        notes.append(f"Whole-video download failed ({str(e2)[-80:]}), fetching clip parts instead")
+                        path = video.result()
+                    except Exception as e:  # noqa: BLE001 - sites sometimes refuse a download
+                        notes.append(f"Video download refused once ({str(e)[-80:]}), retrying")
+                        try:
+                            path = media.download(src["url"], d, int(o["quality"]))
+                        except Exception as e2:  # noqa: BLE001
+                            notes.append(f"Whole-video download failed ({str(e2)[-80:]}), fetching clip parts instead")
                 if path:
                     info = media.probe(path)
                     job.update(source_path=str(path), width=info["width"], height=info["height"])
@@ -866,7 +872,7 @@ def _run_job(job):
             if sp.is_file() and "clips" not in sp.parts:
                 sp.unlink(missing_ok=True)
                 job["source_path"] = ""
-        for pattern in ("*.src.mp4", "*.part", "*.ytdl", "*.wav"):
+        for pattern in ("*.src.mp4", "*.part", "*.ytdl", "*.wav", "source.*"):
             for f in d.glob(pattern):
                 f.unlink(missing_ok=True)
             for f in (d / "clips").glob(pattern):

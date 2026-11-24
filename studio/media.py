@@ -299,16 +299,29 @@ def download_audio(url: str, job_dir: Path, on_progress=None) -> Path:
     return _biggest(job_dir, "audio_src")
 
 
-def download(url: str, job_dir: Path, height=720) -> Path:
+def download(url: str, job_dir: Path, height=720, on_progress=None) -> Path:
     """The whole video. Used for shorter videos, where this is quicker than fetching pieces."""
     for f in job_dir.glob("source*"):
         try:
             f.unlink(missing_ok=True)
         except Exception:
             pass
+
+    def hook(d):
+        total = d.get("total_bytes") or d.get("total_bytes_estimate")
+        if on_progress and d.get("status") == "downloading" and total:
+            on_progress(d.get("downloaded_bytes", 0) / total)
+
+    opts = {
+        "format": _video_format(height),
+        "merge_output_format": "mp4",
+        "outtmpl": str(job_dir / "source.%(ext)s"),
+    }
+    if on_progress:
+        opts["progress_hooks"] = [hook]
+
     try:
-        with _youtube_guard(url), _ydl({"format": _video_format(height), "merge_output_format": "mp4",
-                                        "outtmpl": str(job_dir / "source.%(ext)s")}) as ydl:
+        with _youtube_guard(url), _ydl(opts) as ydl:
             ydl.download([url])
     except Exception:
         if not (list(job_dir.glob("source*"))):
