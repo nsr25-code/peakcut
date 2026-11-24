@@ -108,6 +108,7 @@ def _ydl(opts):
         "file_access_retries": 15,
         "retry_sleep_functions": {"file_access": lambda n: 1.0},
         "windowsfilenames": True,
+        "extractor_args": {"youtube": {"player_client": ["android", "ios", "web"]}},
     }
     node_exe = Path(r"C:\Program Files\nodejs\node.exe")
     if node_exe.exists():

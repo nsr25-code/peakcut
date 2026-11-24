@@ -94,7 +94,7 @@ def heal_failed_jobs():
                 if vid_id:
                     processed_ids.add(vid_id)
                     ap_state["processed_ids"] = list(processed_ids)
-                    autopilot._write_state(ap_state)
+                    autopilot._save_state(ap_state)
 
                 try:
                     shutil.rmtree(jdir, ignore_errors=True)
