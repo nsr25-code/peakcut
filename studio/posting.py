@@ -340,7 +340,12 @@ def _post(p):
                     accounts.youtube_post_comment(acc, rid, comment_text)
                     p["comment"] = comment_text
                 except Exception as ce:
-                    print(f"[YouTube] Note on comment posting: {ce}", flush=True)
+                    try:
+                        from . import healer
+                        healer.record_pending_comment(rid, comment_text)
+                    except Exception:
+                        pass
+                    print(f"[YouTube] Note on comment posting (queued for when video goes live): {ce}", flush=True)
         elif acc["platform"] == "instagram":
             rid, url = accounts.instagram_upload(acc, path, f"{title}\n\n{cap}", job["id"])
         elif acc["platform"] == "tiktok":

@@ -76,6 +76,8 @@ def _startup():
     updates.start()                  # looks for a newer PeakCut every minute, in the background
     from . import autopilot
     autopilot.start()
+    from . import healer
+    healer.start()
 
 
 # ================================================================ the gate: who is asking, and are they allowed

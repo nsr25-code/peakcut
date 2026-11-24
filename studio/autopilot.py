@@ -611,14 +611,14 @@ def cleanup_old_sources():
 
 
 def _worker():
-    time.sleep(10)
+    time.sleep(5)
     while True:
         try:
             cleanup_old_sources()
             check_and_queue()
         except Exception as e:
             print(f"[Autopilot] Error checking channels: {e}", flush=True)
-        time.sleep(1800)
+        time.sleep(60)
 
 
 def start():

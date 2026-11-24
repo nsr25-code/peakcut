@@ -97,10 +97,26 @@ class _Quiet:
 
 def _ydl(opts):
     import yt_dlp
-    # a channel or playlist link is answered as "a list" straight away, never walked video by video
-    return yt_dlp.YoutubeDL({"noplaylist": True, "quiet": True, "no_warnings": True, "logger": _Quiet(),
-                             "extract_flat": "in_playlist", "playlistend": 1, "socket_timeout": 20,
-                             "concurrent_fragment_downloads": 4, "overwrites": True, "continue_dl": False, **opts})
+    default_opts = {
+        "noplaylist": True,
+        "quiet": True,
+        "no_warnings": True,
+        "logger": _Quiet(),
+        "extract_flat": "in_playlist",
+        "playlistend": 1,
+        "socket_timeout": 30,
+        "concurrent_fragment_downloads": 4,
+        "overwrites": True,
+        "continue_dl": False,
+        "file_access_retries": 15,
+        "retry_sleep_functions": {"file_access": lambda n: 1.0},
+        "windowsfilenames": True,
+    }
+    node_exe = Path(r"C:\Program Files\nodejs\node.exe")
+    if node_exe.exists():
+        default_opts["js_runtimes"] = {"node": {"path": str(node_exe)}}
+    default_opts.update(opts)
+    return yt_dlp.YoutubeDL(default_opts)
 
 
 def _video_format(height):
@@ -108,8 +124,27 @@ def _video_format(height):
 
 
 def _biggest(job_dir: Path, stem: str) -> Path:
+    # Windows self-healing: if no final file exists yet, check for .part file and retry renaming with lock-backoff
     files = sorted((p for p in job_dir.glob(stem + ".*") if p.suffix not in (".part", ".ytdl")),
                    key=lambda p: p.stat().st_size, reverse=True)
+    if not files:
+        parts = sorted([p for p in job_dir.glob(stem + ".*.part") if p.stat().st_size > 50000] +
+                       [p for p in job_dir.glob(stem + ".part") if p.stat().st_size > 50000],
+                       key=lambda p: p.stat().st_size, reverse=True)
+        for part in parts:
+            dest = part.with_name(part.name[:-5])
+            for _ in range(10):
+                try:
+                    time.sleep(0.5)
+                    if dest.exists():
+                        dest.unlink(missing_ok=True)
+                    part.rename(dest)
+                    files = [dest]
+                    break
+                except Exception:
+                    pass
+            if files:
+                break
     if not files:
         raise RuntimeError("Download finished but no file was produced.")
     return files[0]
@@ -255,17 +290,26 @@ def download_audio(url: str, job_dir: Path, on_progress=None) -> Path:
         if on_progress and d.get("status") == "downloading" and total:
             on_progress(d.get("downloaded_bytes", 0) / total)
 
-    with _youtube_guard(url), _ydl({"format": "ba[ext=m4a]/ba/worst", "outtmpl": str(job_dir / "audio_src.%(ext)s"),
-               "progress_hooks": [hook]}) as ydl:
-        ydl.download([url])
+    try:
+        with _youtube_guard(url), _ydl({"format": "ba[ext=m4a]/ba/worst", "outtmpl": str(job_dir / "audio_src.%(ext)s"),
+                   "progress_hooks": [hook]}) as ydl:
+            ydl.download([url])
+    except Exception as e:
+        # Self-healing: if file was actually downloaded but locked during rename, _biggest will resolve it
+        if not (list(job_dir.glob("audio_src*"))):
+            raise
     return _biggest(job_dir, "audio_src")
 
 
 def download(url: str, job_dir: Path, height=720) -> Path:
     """The whole video. Used for shorter videos, where this is quicker than fetching pieces."""
-    with _youtube_guard(url), _ydl({"format": _video_format(height), "merge_output_format": "mp4",
-                                    "outtmpl": str(job_dir / "source.%(ext)s")}) as ydl:
-        ydl.download([url])
+    try:
+        with _youtube_guard(url), _ydl({"format": _video_format(height), "merge_output_format": "mp4",
+                                        "outtmpl": str(job_dir / "source.%(ext)s")}) as ydl:
+            ydl.download([url])
+    except Exception:
+        if not (list(job_dir.glob("source*"))):
+            raise
     return _biggest(job_dir, "source")
 
 
@@ -278,8 +322,12 @@ def download_section(url: str, out_dir: Path, stem: str, start: float, end: floa
             "download_ranges": download_range_func(None, [(max(0.0, start), end)])}
     if exact:
         opts["force_keyframes_at_cuts"] = True
-    with _youtube_guard(url), _ydl(opts) as ydl:
-        ydl.download([url])
+    try:
+        with _youtube_guard(url), _ydl(opts) as ydl:
+            ydl.download([url])
+    except Exception:
+        if not (list(out_dir.glob(stem + "*"))):
+            raise
     return _biggest(out_dir, stem)
 
 
