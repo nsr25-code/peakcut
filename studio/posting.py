@@ -300,6 +300,19 @@ def on_job_done(job):
         _save()
     _update_schedule_state()
 
+    # Immediately trigger YouTube Cloud-Scheduling for assigned posts
+    for post in list(_posts):
+        if post.get("status") == "scheduled" and post.get("job") == job["id"] and not post.get("remote_id"):
+            try:
+                with ctx.as_user(post.get("user", "u_local")):
+                    with _lock:
+                        if post.get("status") != "scheduled" or post.get("remote_id"):
+                            continue
+                        post["status"] = "posting"
+                    _post(post)
+            except Exception as pe:
+                print(f"[Posting] Cloud-schedule immediate trigger note: {pe}", flush=True)
+
 
 def _caption(clip, creator):
     tags = " ".join("#" + h for h in clip.get("hashtags", []))
