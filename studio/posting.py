@@ -160,12 +160,12 @@ def _update_schedule_state():
         now_lt = time.localtime(now)
         start_date = datetime.date(now_lt.tm_year, now_lt.tm_mon, now_lt.tm_mday)
         buffer_start = start_date.strftime("%Y-%m-%d (%A)")
-        buffer_end = (start_date + datetime.timedelta(days=3)).strftime("%Y-%m-%d (%A)")
+        buffer_end = (start_date + datetime.timedelta(days=1)).strftime("%Y-%m-%d (%A)")
 
         state = {
             "daily_cap": DAILY_CAP,
             "window": "07:30 AM to 07:30 PM",
-            "rolling_buffer_rule": "Rolling 4-Day Buffer: Today + 3 days ahead (e.g. Mon -> Thu). As days advance, past day publishes and next day stocks up.",
+            "rolling_buffer_rule": "Rolling 48-Hour Fresh Buffer: Today + Tomorrow. Keeps channel 100% active while ensuring fresh viral trends publish within 24-48 hours!",
             "current_buffer_window": f"{buffer_start} to {buffer_end}",
             "slots": [
                 {"slot": 1, "time": "07:30 AM", "hour": 7, "minute": 30},

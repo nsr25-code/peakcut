@@ -79,6 +79,9 @@ def is_gta_video(title: str) -> bool:
 def gta_public_demand_score(item: dict) -> float:
     """Calculate the public demand, view velocity, and viral interest score of a GTA video."""
     views = float(item.get("views") or 0)
+    days_ago = max(1.0, float(item.get("days_ago") or 14))
+    # View Velocity: recently exploding videos get a massive breakout multiplier!
+    velocity = views / (days_ago ** 0.6)
     title = (item.get("title") or "").upper()
     multiplier = 1.0
 
@@ -93,7 +96,7 @@ def gta_public_demand_score(item: dict) -> float:
     if any(k in title for k in ["HEIST", "STEALING", "STOLE", "SUPERCAR", "SECRET", "MYTH"]):
         multiplier *= 1.5
 
-    return views * multiplier
+    return velocity * multiplier
 
 
 # ==========================================
@@ -152,6 +155,9 @@ def is_freefire_video(title: str, description: str = "") -> bool:
 def freefire_public_demand_score(item: dict) -> float:
     """Calculate the public demand and viral interest score of a Free Fire video."""
     views = float(item.get("views") or 0)
+    days_ago = max(1.0, float(item.get("days_ago") or 14))
+    # View Velocity: recently exploding videos get a massive breakout multiplier!
+    velocity = views / (days_ago ** 0.6)
     title = (item.get("title") or "").upper()
     multiplier = 1.0
 
@@ -164,7 +170,7 @@ def freefire_public_demand_score(item: dict) -> float:
     if any(k in title for k in ["AJJUBHAI", "TOTAL GAMING", "RAISTAR", "NOBRU"]):
         multiplier *= 1.6
 
-    return views * multiplier
+    return velocity * multiplier
 
 
 # ==========================================
@@ -334,11 +340,19 @@ def fetch_channel_videos(url: str, game_type: str = "gta", limit: int = 5) -> li
                 dur = float(d.get("duration") or 0)
                 is_match = is_freefire_video(title, desc) if game_type == "freefire" else is_gta_video(title)
                 if vid and is_match and ((300 <= dur <= 2400) or dur == 0):
+                    ud = str(d.get("upload_date") or "")
+                    days_ago = 14.0
+                    if len(ud) == 8:
+                        try:
+                            days_ago = max(1.0, float((datetime.datetime.now() - datetime.datetime.strptime(ud, "%Y%m%d")).days))
+                        except Exception:
+                            pass
                     items.append({
                         "id": vid,
                         "title": title,
                         "duration": dur,
                         "views": int(d.get("view_count") or 0),
+                        "days_ago": days_ago,
                         "channel": d.get("uploader") or d.get("channel") or "",
                     })
             except Exception:
@@ -368,11 +382,19 @@ def fetch_search_videos(query: str, game_type: str = "gta", limit: int = 5) -> l
                 dur = float(d.get("duration") or 0)
                 is_match = is_freefire_video(title, desc) if game_type == "freefire" else is_gta_video(title)
                 if vid and is_match and ((300 <= dur <= 2400) or dur == 0):
+                    ud = str(d.get("upload_date") or "")
+                    days_ago = 14.0
+                    if len(ud) == 8:
+                        try:
+                            days_ago = max(1.0, float((datetime.datetime.now() - datetime.datetime.strptime(ud, "%Y%m%d")).days))
+                        except Exception:
+                            pass
                     items.append({
                         "id": vid,
                         "title": title,
                         "duration": dur,
                         "views": int(d.get("view_count") or 0),
+                        "days_ago": days_ago,
                         "channel": d.get("uploader") or d.get("channel") or "",
                     })
             except Exception:
@@ -385,7 +407,7 @@ def fetch_search_videos(query: str, game_type: str = "gta", limit: int = 5) -> l
 # ==========================================
 # BUFFER CHECKER (INDEPENDENT PER ACCOUNT)
 # ==========================================
-def is_account_buffer_full(account_id: str, posts_data: list, buffer_days: int = 4, daily_cap: int = 4) -> bool:
+def is_account_buffer_full(account_id: str, posts_data: list, buffer_days: int = 2, daily_cap: int = 4) -> bool:
     """Checks whether an account has all daily slots filled for the next buffer_days."""
     DAILY_SLOTS = [(7, 30), (11, 30), (15, 30), (19, 30)]
     now = time.time()
