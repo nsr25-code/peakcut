@@ -276,6 +276,16 @@ def list_jobs():
 def get(jid):
     """The job, only if it belongs to whoever this code is running for."""
     job = _jobs.get(jid)
+    if not job and jid:
+        try:
+            uid = ctx.uid()
+            d = config.USERS_DIR / uid
+            found = list((d / "jobs" / jid).glob("job.json")) + list((d / "creators").glob(f"*/videos/{jid}/job.json"))
+            if found and found[0].is_file():
+                _load_file(found[0], uid)
+                job = _jobs.get(jid)
+        except Exception:
+            pass
     return job if job and job["user"] == ctx.uid() else None
 
 
