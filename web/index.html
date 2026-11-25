@@ -1284,8 +1284,10 @@ function drawShell() {  const nav = (v, icon, label, extra = "") => `<button cla
   }
   if (S.view === "overview" || S.view === "library") {
     const L = S.status.links || {};
-    act = (L.repo ? `<a class="btn" href="${esc(L.repo)}" target="_blank" rel="noopener" title="Star PeakCut on GitHub">${ic("github")}<span>Star<span class="long"> on GitHub</span></span></a>` : "")
-        + (L.follow ? `<a class="btn primary" href="${esc(L.follow)}" target="_blank" rel="noopener" title="Follow the maker of PeakCut on Instagram">${ic("instagram")}Follow me</a>` : "");
+    const repoUrl = (L.repo && !L.repo.includes("haziq")) ? L.repo : "https://github.com/nsr25-code/peakcut";
+    const followUrl = (L.follow && !L.follow.includes("haziq")) ? L.follow : "https://www.instagram.com/nisar_ahmad_0143/";
+    act = `<a class="btn" href="${esc(repoUrl)}" target="_blank" rel="noopener" title="Star PeakCut on GitHub">${ic("github")}<span>Star<span class="long"> on GitHub</span></span></a>`
+        + `<a class="btn primary" href="${esc(followUrl)}" target="_blank" rel="noopener" title="Follow on Instagram">${ic("instagram")}Follow me</a>`;
   }
   const me = S.status.user;
   const kk = S.status.ai;
