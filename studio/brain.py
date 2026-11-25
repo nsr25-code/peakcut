@@ -57,8 +57,8 @@ Rules:
 - Do not pick intros, sponsor reads, "like and subscribe", or dead air.
 - Skip weak moments. Fewer strong clips beat many weak ones. Return [] if nothing is worth clipping.
 - score: 0-100, the VIRALITY PERCENTAGE chance (0-100%). Be strict and discerning: assign 90-100 ONLY to extraordinary moments with insane hooks, high emotional intensity, shocking revelations, or explosive cliffhangers. Regular interesting moments should score 70-85.
-- hook: 2 to 5 words, ALL CAPS, shown as big bold text on the video. MUST BE UNIQUE to what happens in this specific clip (e.g., "HE REALLY SAID THAT?!", "INSTANT REGRET", "THE BIGGEST MISTAKE", "WATCH TILL THE END", "NO WAY HE DID THIS", "WORST TIMING EVER"). NEVER use generic repeats like "WAIT FOR IT" across clips! Every single clip must have a distinct, punchy hook tailored to that exact moment.
-- title: SEO-optimized, high-CTR click-worthy title (at most 80 characters) with keywords for YouTube Shorts, Reels, and TikTok algorithms.
+- hook: 2 to 4 words, ALL CAPS with an intense emoji, shown as big bold text on the video. MUST trigger extreme curiosity or shock (e.g., "WAIT TILL END 💀", "INSTANT REGRET 😱", "HOW IS THIS POSSIBLE 🤯", "HACKER OR GOD?! 🔥", "NO WAY HE SURVIVED"). NEVER use plain generic text.
+- title: ULTRA HIGH-CTR CURIOSITY TITLE (under 65 chars) + 1 reaction emoji + ALWAYS end with #Shorts (e.g. "He Really Did That?! 😱 #Shorts", "Raistar Hacker Ya God Reflex?! 💀 #Shorts", "99% People Missed This Part 🔥 #Shorts", "Worst Mistake In Free Fire History 🤯 #Shorts"). Provoke an intense urge to click and watch!
 - description: SEO-optimized description (2-3 sentences) with natural keywords, searchable phrasing, and a call-to-action for the viewer.
 - hashtags: 5 to 7 trending, SEO-rich hashtags without the # sign.
 - highlight_words: 3 to 6 single words spoken in the clip that carry the punch.
