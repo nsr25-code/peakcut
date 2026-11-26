@@ -17,7 +17,10 @@ except ValueError:
 
 
 def _mine() -> list:
-    u = ctx.uid()
+    try:
+        u = ctx.uid()
+    except Exception:
+        u = "u_local"
     return [p for p in _posts if p.get("user") == u]
 OPEN = ("scheduled", "posting")
 
@@ -563,8 +566,13 @@ def overview() -> dict:
             posted[_day(p["posted_at"])] += 1
             views[_day(p["posted_at"])] += p["views"] or 0
     daily = [{"day": d, "clips": made[d], "posted": posted[d], "views": views[d]} for d in days]
+    try:
+        from . import community
+        polls_data = community.get_polls()
+    except Exception:
+        polls_data = {"channels": {}}
     return {"paused": accounts.settings()["paused"], "creators": rows, "posts": show, "daily": daily,
-            "alerts": alerts.configured(), "recording": len(live.active_mine())}
+            "alerts": alerts.configured(), "recording": len(live.active_mine()), "polls": polls_data}
 
 
 def digest_text() -> str:

@@ -21,6 +21,8 @@ STYLES = {
 }
 HOOK = {"font": "Poppins ExtraBold", "size": 96, "ink": "14100E", "box": "FFFFFF", "pad_x": 36, "pad_y": 22, "radius": 26,
         "max_w": 900}
+VOTE_BADGE = {"font": "Poppins ExtraBold", "size": 42, "ink": "FFFFFF", "box": "111116", "pad_x": 34, "pad_y": 14, "radius": 22,
+              "max_w": 860}
 FONT_FILES = {"Poppins ExtraBold": "Poppins-ExtraBold.ttf", "Anton": "Anton-Regular.ttf", "Archivo Black": "ArchivoBlack-Regular.ttf"}
 CAP_MAX_W = 960   # captions never run wider than this, whatever is said
 
@@ -156,6 +158,48 @@ def _hook_events(hook, dur, y):
     return ev
 
 
+def _pick_vote_badge_text(hook: str) -> str:
+    h = hook.lower() if hook else ""
+    if any(k in h for k in ["fail", "crash", "bloop", "stunt", "impossible", "hardest", "race", "jump", "car"]):
+        return "RATE THIS MOMENT: 1 TO 10? [VOTE]"
+    elif any(k in h for k in ["hacker", "clutch", "headshot", "1v4", "rage", "revenge", "kill"]):
+        return "PRO OR HACKER? VOTE IN COMMENTS"
+    elif any(k in h for k in ["smart", "iq", "trick", "secret"]):
+        return "200 IQ OR PURE LUCK? [VOTE]"
+    elif any(k in h for k in ["real", "fake", "script"]):
+        return "REAL OR SCRIPTED? VOTE BELOW"
+    elif any(k in h for k in ["vs", "better", "best", "who"]):
+        return "WHO DID IT BETTER? VOTE 1 OR 2"
+    else:
+        return "W OR L? COMMENT YOUR VOTE"
+
+
+def _vote_badge_events(hook, dur, y=1560):
+    """The floating debate pill: prompts viewers to comment their vote or rating, boosting comments & algorithm score."""
+    text = _pick_vote_badge_text(hook)
+    f, size = _Font.get(VOTE_BADGE["font"]), VOTE_BADGE["size"]
+    tw = f.width(text, size)
+    if tw > VOTE_BADGE["max_w"]:
+        size = max(32, int(size * VOTE_BADGE["max_w"] / tw))
+        tw = f.width(text, size)
+    line_h = f.em(size) * 1.15
+    bw, bh = tw + 2 * VOTE_BADGE["pad_x"], line_h + 2 * VOTE_BADGE["pad_y"]
+    x0, y0, r = (W - bw) / 2, y - bh / 2, min(VOTE_BADGE["radius"], bh / 2)
+    x1, y1 = x0 + bw, y0 + bh
+    n = lambda v: f"{v:.0f}"
+    box = (f"m {n(x0 + r)} {n(y0)} l {n(x1 - r)} {n(y0)} b {n(x1)} {n(y0)} {n(x1)} {n(y0)} {n(x1)} {n(y0 + r)} "
+           f"l {n(x1)} {n(y1 - r)} b {n(x1)} {n(y1)} {n(x1)} {n(y1)} {n(x1 - r)} {n(y1)} "
+           f"l {n(x0 + r)} {n(y1)} b {n(x0)} {n(y1)} {n(x0)} {n(y1)} {n(x0)} {n(y1 - r)} "
+           f"l {n(x0)} {n(y0 + r)} b {n(x0)} {n(y0)} {n(x0)} {n(y0)} {n(x0 + r)} {n(y0)}")
+    badge_start = min(1.2, max(0.4, dur * 0.08))
+    badge_end = max(badge_start + 1.0, dur)
+    span = f"{_ts(badge_start)},{_ts(badge_end)}"
+    ev = [f"Dialogue: 3,{span},Badge,,0,0,0,,{{\\an7\\pos(0,0)\\fad(350,250)\\c&H{VOTE_BADGE['box']}&\\1a&H18&\\p1}}{box}{{\\p0}}"]
+    cy = y - f.cap_shift(size)
+    ev.append(f"Dialogue: 4,{span},Badge,,0,0,0,,{{\\an5\\pos({W // 2},{cy:.0f})\\fad(350,250)\\fs{size}\\c&H{VOTE_BADGE['ink']}&}}{text}")
+    return ev
+
+
 def build_ass(words, start, end, hook, style_name, highlight, hook_y, cap_y) -> str:
     st = STYLES.get(style_name, STYLES["bounce"])
     words = [dict(w, s=w["s"] - CAPTION_LEAD, e=w["e"] - CAPTION_LEAD) for w in words]
@@ -171,12 +215,15 @@ ScaledBorderAndShadow: yes
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Cap,{st['font']},{st['size']},&H00{st['base']},&H00{st['base']},&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,{st['outline']},0,5,0,0,0,1
 Style: Hook,{HOOK['font']},{HOOK['size']},&H00{HOOK['ink']},&H00{HOOK['ink']},&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1
+Style: Badge,{VOTE_BADGE['font']},{VOTE_BADGE['size']},&H00{VOTE_BADGE['ink']},&H00{VOTE_BADGE['ink']},&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     dur = end - start
     ev = _hook_events(_clean(hook), dur, hook_y)
+    badge_y = min(1560, cap_y + 180) if cap_y else 1560
+    ev += _vote_badge_events(_clean(hook), dur, badge_y)
     f = _Font.get(st["font"])
     inside = [dict(w, w=_clean(w["w"])) for w in words if w["s"] >= start - 0.05 and w["s"] < end]
     inside = sorted((w for w in inside if w["w"]), key=lambda w: w["s"])

@@ -11,7 +11,7 @@ import traceback
 import uuid
 from pathlib import Path
 
-from . import brain, config, creators, ctx, facecam, games, load, media, quality, render, roman, safe, transcribe, usage
+from . import auth, brain, config, creators, ctx, facecam, games, load, media, quality, render, roman, safe, transcribe, usage
 
 class _FairQueue:
     """Whose video is next. Each person has their own line and the lines take turns, so someone who adds ten
@@ -268,7 +268,10 @@ def all_jobs() -> list:
 
 
 def list_jobs():
-    u = ctx.uid()
+    try:
+        u = ctx.uid()
+    except Exception:
+        u = auth.local_user().id if hasattr(auth, "local_user") else "u_local"
     with _lock:
         return sorted((dict(j) for j in _by_user.get(u, {}).values()), key=lambda j: -j["created"])
 

@@ -91,7 +91,10 @@ def active():
 
 
 def active_mine():
-    u = ctx.uid()
+    try:
+        u = ctx.uid()
+    except Exception:
+        u = "u_local"
     return [s for s in active() if s.job["user"] == u]
 
 

@@ -437,6 +437,11 @@ def is_account_buffer_full(account_id: str, posts_data: list, buffer_days: int =
 # ==========================================
 def check_and_queue():
     """Checks buffer status for both channels and queues the top viral video for the channel needing clips most."""
+    try:
+        from . import community
+        community.ensure_daily_polls()
+    except Exception:
+        pass
     uid = auth.local_user().id
     with ctx.as_user(uid):
         if jobs.busy_count() > 0:

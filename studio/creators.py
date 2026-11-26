@@ -10,11 +10,15 @@ from . import config, ctx
 
 
 def _root() -> Path:
-    return config.user_dir(ctx.uid()) / "creators"
+    try:
+        uid = ctx.uid()
+    except Exception:
+        uid = "u_local"
+    return config.user_dir(uid) / "creators"
 
 _lock = threading.RLock()
 
-DEFAULTS = {"name": "", "channel": "", "style": "bounce", "layout": "blur", "captions": True, "min_len": 20, "max_len": 60,
+DEFAULTS = {"name": "", "channel": "", "style": "bounce", "layout": "blur", "captions": True, "min_len": 20, "max_len": 35,
             "max_clips": 5, "min_score": 90, "auto_watch": False, "buffer_min": 20, "live_per_hour": 4, "ai_every_min": 3, "ai_only_on_spike": True, "auto_jump_pct": 60,
             "plan": "free", "decide_mode": "both", "must_clip_min": 0, "min_gap_min": 2,
             "game": "Grand Theft Auto V",
@@ -90,7 +94,10 @@ _mem: dict = {}   # user -> {creator id: creator}. The files stay the truth; thi
 
 
 def _mine() -> dict:
-    u = ctx.uid()
+    try:
+        u = ctx.uid()
+    except Exception:
+        u = "u_local"
     got = _mem.get(u)
     if got is None:
         got = {}

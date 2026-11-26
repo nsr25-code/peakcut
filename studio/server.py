@@ -78,6 +78,11 @@ def _startup():
     autopilot.start()
     from . import healer
     healer.start()
+    try:
+        from . import community
+        community.ensure_daily_polls()
+    except Exception:
+        pass
 
 
 # ================================================================ the gate: who is asking, and are they allowed
@@ -1318,6 +1323,18 @@ def ai_test(request: Request):
 @app.get("/api/overview")
 def overview():
     return posting.overview()
+
+
+@app.get("/api/community/polls")
+def get_community_polls():
+    from . import community
+    return community.get_polls()
+
+
+@app.post("/api/community/generate")
+def generate_community_polls():
+    from . import community
+    return community.ensure_daily_polls()
 
 
 @app.get("/api/settings")

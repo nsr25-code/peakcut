@@ -51,7 +51,7 @@ Most checks should return []. Only return a moment you would stop scrolling for.
 
 RULES = """
 Rules:
-- Each clip MUST be {min_len} to {max_len} seconds long (natural optimal duration 20 to 60 seconds). Pick the natural length that gives the highest retention and leaves the viewer shocked, inspired, or entertained.
+- Each clip MUST be {min_len} to {max_len} seconds long (VIRAL GOLDEN RATIO: 22 to 35 seconds). Shorter, high-intensity clips (22-35s) maximize Average Percentage Viewed (>120%) and looping! Pick the natural length that gives explosive retention and leaves the viewer shocked, inspired, or entertained.
 - Start on the setup line, not mid-sentence. End right after the payoff, punchline, or reaction on the last word of a
   complete sentence: never in the middle of a sentence or a thought. The clip must make sense on its own.
 - Do not pick intros, sponsor reads, "like and subscribe", or dead air.

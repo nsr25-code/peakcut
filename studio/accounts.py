@@ -37,7 +37,11 @@ PLATFORM_NAMES = {"youtube": "YouTube", "instagram": "Instagram", "tiktok": "Tik
 
 
 def _dir() -> Path:
-    d = config.user_dir(ctx.uid()) / "accounts"
+    try:
+        uid = ctx.uid()
+    except Exception:
+        uid = "u_local"
+    d = config.user_dir(uid) / "accounts"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -239,7 +243,10 @@ _settings_mem: dict = {}
 
 
 def settings() -> dict:
-    u = ctx.uid()
+    try:
+        u = ctx.uid()
+    except Exception:
+        u = "u_local"
     if u not in _settings_mem:
         _settings_mem[u] = {**SETTING_DEFAULTS, **_read("settings.json", {})}
     return dict(_settings_mem[u])

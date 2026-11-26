@@ -1923,6 +1923,43 @@ function nextSteps(o) {
   if (S.creators.length && !S.creators.some(c => c.auto_watch)) st.push(["Turn on auto-record", "Record by itself whenever a creator goes live.", "go:c:" + S.creators[0].id + ":setup"]);
   return st;
 }
+function communityPollsCard(polls) {
+  if (!polls || !polls.channels) return "";
+  const chs = Object.values(polls.channels);
+  if (!chs.length) return "";
+  return `<div class="card" style="margin-top:16px"><div class="card-head"><div><h2>Daily Community Polls (Auto-Generated)</h2><p class="sub">Boost viewer votes & YouTube algorithm score with daily interactive debates</p></div>
+    <button class="btn sm" data-act="genpolls">${ic("refresh")}Refresh Polls</button></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:16px;padding:8px 0">
+      ${chs.map(c => {
+        const p = c.today_poll;
+        if (!p) return "";
+        const pollText = `${p.question}\n\n1. ${p.options[0]}\n2. ${p.options[1]}\n3. ${p.options[2]}\n4. ${p.options[3]}`;
+        return `<div style="background:var(--frame-2);border-radius:12px;padding:16px;border:1px solid var(--frame-border);display:flex;flex-direction:column;justify-content:space-between">
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+              <span class="pill" style="font-weight:700;background:var(--brand-ink);color:#fff">${esc(c.name)}</span>
+              <span class="pill ok">${esc(p.tag || "Viral Debate")}</span>
+            </div>
+            <h3 style="font-size:15px;line-height:1.45;margin:0 0 12px;color:var(--text);font-weight:600">${esc(p.question)}</h3>
+            <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
+              ${p.options.map((opt, idx) => `
+                <div style="display:flex;align-items:center;background:var(--frame);padding:8px 12px;border-radius:8px;font-size:13px;border:1px solid var(--frame-border)">
+                  <span style="width:20px;height:20px;border-radius:50%;background:var(--brand);color:var(--brand-ink);display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;margin-right:10px">${idx+1}</span>
+                  <span style="flex:1">${esc(opt)}</span>
+                </div>
+              `).join("")}
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;border-top:1px solid var(--frame-border);padding-top:12px">
+            <button class="btn primary sm" style="flex:1" data-act="copypoll" data-text="${esc(pollText)}" data-url="${esc(c.community_url)}">
+              ${ic("send")} Copy & Open YouTube Community Tab
+            </button>
+          </div>
+        </div>`;
+      }).join("")}
+    </div></div>`;
+}
+
 function drawOverview() {
   const o = S.overview, box = $("#ov"); if (!o || !box) return;
   const sum = k => o.creators.reduce((a, r) => a + r[k], 0);
@@ -1943,6 +1980,7 @@ function drawOverview() {
         ${barChart(o.daily || [])}</div>
       ${aiCard()}
     </div>
+    ${communityPollsCard(o.polls)}
     ${steps.length ? `<div class="card"><div class="card-head"><div><h2>Next steps</h2><p class="sub">Finish setting up PeakCut</p></div></div>
       <div class="steps across">${steps.map((x, i) => `<button class="step" data-act="step" data-to="${esc(x[2])}"><span class="n">${i + 1}</span><span><b>${esc(x[0])}</b><span class="d">${esc(x[1])}</span></span>${ic("arrowr")}</button>`).join("")}</div></div>` : ""}
     <div class="card"><div class="card-head"><div><h2>Creators</h2><p class="sub">Each creator's status and results</p></div></div>
@@ -2269,6 +2307,32 @@ document.addEventListener("click", async e => {
   if (b.tagName === "A") e.preventDefault();
   try {
     if (a === "go") { closePops(); return go(d.v, d.tab); }
+    if (a === "copypoll") {
+      const text = d.text;
+      const url = d.url;
+      try {
+        await navigator.clipboard.writeText(text);
+        toast("Poll copied! Paste directly into YouTube Community Tab.", "ok");
+      } catch (err) {
+        toast("Opening YouTube Community Tab...", "ok");
+      }
+      if (url) window.open(url, "_blank");
+      return;
+    }
+    if (a === "genpolls") {
+      b.disabled = true;
+      try {
+        await send("/api/community/generate", {}, "POST");
+        S.overview = await api("/api/overview");
+        drawOverview();
+        toast("Fresh daily community polls generated!", "ok");
+      } catch (err) {
+        toast(err.message, "bad");
+      } finally {
+        b.disabled = false;
+      }
+      return;
+    }
     if (a === "aimodels") {
       b.disabled = true;
       try {
