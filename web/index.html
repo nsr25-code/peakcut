@@ -1927,18 +1927,21 @@ function communityPollsCard(polls) {
   if (!polls || !polls.channels) return "";
   const chs = Object.values(polls.channels);
   if (!chs.length) return "";
-  return `<div class="card" style="margin-top:16px"><div class="card-head"><div><h2>Daily Community Polls (Auto-Generated)</h2><p class="sub">Boost viewer votes & YouTube algorithm score with daily interactive debates</p></div>
-    <button class="btn sm" data-act="genpolls">${ic("refresh")}Refresh Polls</button></div>
+  return `<div class="card" style="margin-top:16px"><div class="card-head"><div><h2>Daily Community & Debate Posts (Auto-Generated)</h2><p class="sub">Boost viewer votes & YouTube algorithm score with daily interactive debates</p></div>
+    <button class="btn sm" data-act="genpolls">${ic("refresh")}Refresh Posts</button></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:16px;padding:8px 0">
       ${chs.map(c => {
         const p = c.today_poll;
         if (!p) return "";
-        const pollText = `${p.question}\n\n1. ${p.options[0]}\n2. ${p.options[1]}\n3. ${p.options[2]}\n4. ${p.options[3]}`;
+        const isPost = c.post_type === "post";
+        const postText = p.formatted_text || (isPost ? (p.question + "\n\n1️⃣ " + p.options[0] + "\n2️⃣ " + p.options[1] + "\n3️⃣ " + p.options[2] + "\n4️⃣ " + p.options[3] + "\n\nComment your vote (1, 2, 3 or 4) below! 👇💬\n#GTA5 #GTA6 #Shorts") : (p.question + "\n\n1. " + p.options[0] + "\n2. " + p.options[1] + "\n3. " + p.options[2] + "\n4. " + p.options[3]));
+        const btnLabel = isPost ? "Copy & Open YouTube Posts Tab" : "Copy & Open YouTube Poll Tab";
+        const tagLabel = isPost ? "Debate Post (1-Click Paste)" : (p.tag || "Viral Debate");
         return `<div style="background:var(--frame-2);border-radius:12px;padding:16px;border:1px solid var(--frame-border);display:flex;flex-direction:column;justify-content:space-between">
           <div>
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
               <span class="pill" style="font-weight:700;background:var(--brand-ink);color:#fff">${esc(c.name)}</span>
-              <span class="pill ok">${esc(p.tag || "Viral Debate")}</span>
+              <span class="pill ok">${esc(tagLabel)}</span>
             </div>
             <h3 style="font-size:15px;line-height:1.45;margin:0 0 12px;color:var(--text);font-weight:600">${esc(p.question)}</h3>
             <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
@@ -1949,10 +1952,11 @@ function communityPollsCard(polls) {
                 </div>
               `).join("")}
             </div>
+            ${isPost ? `<p class="help" style="margin:0 0 10px;font-size:12px">💡 Formatted for 1-click paste directly into YouTube's standard post box!</p>` : ""}
           </div>
           <div style="display:flex;gap:8px;align-items:center;border-top:1px solid var(--frame-border);padding-top:12px">
-            <button class="btn primary sm" style="flex:1" data-act="copypoll" data-text="${esc(pollText)}" data-url="${esc(c.community_url)}">
-              ${ic("send")} Copy & Open YouTube Community Tab
+            <button class="btn primary sm" style="flex:1" data-act="copypoll" data-ispost="${isPost ? '1' : '0'}" data-text="${esc(postText)}" data-url="${esc(c.community_url)}">
+              ${ic("send")} ${esc(btnLabel)}
             </button>
           </div>
         </div>`;
@@ -2310,11 +2314,12 @@ document.addEventListener("click", async e => {
     if (a === "copypoll") {
       const text = d.text;
       const url = d.url;
+      const isPost = d.ispost === "1";
       try {
         await navigator.clipboard.writeText(text);
-        toast("Poll copied! Paste directly into YouTube Community Tab.", "ok");
+        toast(isPost ? "Debate post copied! Paste directly into YouTube Posts box." : "Poll copied! Paste directly into YouTube Community Tab.", "ok");
       } catch (err) {
-        toast("Opening YouTube Community Tab...", "ok");
+        toast("Opening YouTube...", "ok");
       }
       if (url) window.open(url, "_blank");
       return;

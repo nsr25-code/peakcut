@@ -1,5 +1,5 @@
-"""Autonomous Daily Community Poll Engine for YouTube Channels.
-Generates, stores, and organizes high-virality polls and debate questions to maximize Community Tab engagement.
+"""Autonomous Daily Community & Debate Post Engine for YouTube Channels.
+Generates, stores, and organizes high-virality polls and debate posts to maximize Community & Posts Tab engagement.
 """
 import json
 import logging
@@ -8,7 +8,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import accounts, brain, config
+from . import accounts, config
 
 log = logging.getLogger("community")
 
@@ -105,6 +105,29 @@ FF_VIRAL_POLLS = [
 ]
 
 
+def format_post_text(question: str, options: list, is_post: bool = False) -> str:
+    """Formats text for direct clipboard copy and paste into YouTube."""
+    if is_post:
+        # Single-box Text Debate Post for Hype Drip Clips
+        return (
+            f"{question}\n\n"
+            f"1️⃣ {options[0]}\n"
+            f"2️⃣ {options[1]}\n"
+            f"3️⃣ {options[2]}\n"
+            f"4️⃣ {options[3]}\n\n"
+            f"Comment your vote (1, 2, 3 or 4) below! 👇💬\n"
+            f"#GTA5 #GTA6 #Shorts"
+        )
+    # Interactive Poll format for NSR FF LIVE
+    return (
+        f"{question}\n\n"
+        f"1. {options[0]}\n"
+        f"2. {options[1]}\n"
+        f"3. {options[2]}\n"
+        f"4. {options[3]}"
+    )
+
+
 def _read_data() -> dict:
     if DATA_FILE.exists():
         try:
@@ -126,7 +149,7 @@ def get_polls() -> dict:
 
 
 def ensure_daily_polls() -> dict:
-    """Checks each connected YouTube channel and ensures a fresh viral poll is ready for today."""
+    """Checks each connected YouTube channel and ensures a fresh viral post/poll is ready for today."""
     data = _read_data()
     accs = accounts.list_accounts()
     yt_accs = [a for a in accs if a.get("platform") == "youtube"]
@@ -141,32 +164,39 @@ def ensure_daily_polls() -> dict:
         pool = FF_VIRAL_POLLS if is_ff else GTA_VIRAL_POLLS
         game_label = "Free Fire" if is_ff else "GTA 5 & 6"
 
+        # Hype Drip Clips uses standard "post" format (since polls are restricted/disabled on it)
+        # NSR FF LIVE uses interactive "poll" format
+        post_type = "poll" if is_ff else "post"
+        type_label = "Interactive Poll" if is_ff else "Debate Post"
+        comm_url = f"https://www.youtube.com/channel/{ch_id}/community" if is_ff else f"https://www.youtube.com/channel/{ch_id}/posts"
+
         ch_data = data.setdefault("channels", {}).setdefault(aid, {
             "account_id": aid,
             "channel_id": ch_id,
             "name": name,
             "game": game_label,
-            "community_url": f"https://www.youtube.com/channel/{ch_id}/community",
+            "post_type": post_type,
+            "type_label": type_label,
+            "community_url": comm_url,
             "today_poll": None,
             "upcoming_polls": [],
             "history": []
         })
         ch_data["name"] = name
-        ch_data["community_url"] = f"https://www.youtube.com/channel/{ch_id}/community"
+        ch_data["post_type"] = post_type
+        ch_data["type_label"] = type_label
+        ch_data["community_url"] = comm_url
 
         today_poll = ch_data.get("today_poll")
         if not today_poll or today_poll.get("date") != today_str:
-            # Archive old poll
             if today_poll:
                 ch_data.setdefault("history", []).append(today_poll)
 
-            # Check if an upcoming poll was queued for today
             upcoming = ch_data.get("upcoming_polls", [])
             picked = None
             if upcoming and upcoming[0].get("date") == today_str:
                 picked = upcoming.pop(0)
             else:
-                # Pick a fresh poll that wasn't used recently
                 used_questions = {p.get("question") for p in ch_data.get("history", [])[-10:]}
                 candidates = [p for p in pool if p["question"] not in used_questions]
                 if not candidates:
@@ -177,16 +207,24 @@ def ensure_daily_polls() -> dict:
                     "date": today_str,
                     "question": selected["question"],
                     "options": selected["options"],
+                    "formatted_text": format_post_text(selected["question"], selected["options"], is_post=(post_type == "post")),
                     "tag": selected["tag"],
                     "reason": selected["reason"],
                     "game": game_label,
+                    "post_type": post_type,
                     "created_at": time.time()
                 }
 
             ch_data["today_poll"] = picked
             changed = True
+        else:
+            # Update formatted text and post_type if not set
+            if "formatted_text" not in today_poll or today_poll.get("post_type") != post_type:
+                today_poll["post_type"] = post_type
+                today_poll["formatted_text"] = format_post_text(today_poll["question"], today_poll["options"], is_post=(post_type == "post"))
+                changed = True
 
-        # Ensure at least 5 upcoming polls are planned
+        # Ensure upcoming polls have formatted_text
         upcoming = ch_data.get("upcoming_polls", [])
         if len(upcoming) < 5:
             used_questions = {ch_data["today_poll"]["question"]} if ch_data.get("today_poll") else set()
@@ -205,9 +243,11 @@ def ensure_daily_polls() -> dict:
                     "date": future_date,
                     "question": cand["question"],
                     "options": cand["options"],
+                    "formatted_text": format_post_text(cand["question"], cand["options"], is_post=(post_type == "post")),
                     "tag": cand["tag"],
                     "reason": cand["reason"],
                     "game": game_label,
+                    "post_type": post_type,
                     "created_at": time.time()
                 })
             ch_data["upcoming_polls"] = sorted(upcoming, key=lambda x: x["date"])
