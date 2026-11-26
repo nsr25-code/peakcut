@@ -153,7 +153,7 @@ def ensure_daily_polls() -> dict:
     data = _read_data()
     accs = accounts.list_accounts()
     yt_accs = [a for a in accs if a.get("platform") == "youtube"]
-    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today_str = time.strftime("%Y-%m-%d")
 
     changed = False
     for acc in yt_accs:
@@ -230,7 +230,7 @@ def ensure_daily_polls() -> dict:
             used_questions = {ch_data["today_poll"]["question"]} if ch_data.get("today_poll") else set()
             used_questions.update(p.get("question") for p in upcoming)
             for day_offset in range(1, 6):
-                future_date = datetime.fromtimestamp(time.time() + day_offset * 86400, timezone.utc).strftime("%Y-%m-%d")
+                future_date = time.strftime("%Y-%m-%d", time.localtime(time.time() + day_offset * 86400))
                 if any(p.get("date") == future_date for p in upcoming):
                     continue
                 candidates = [p for p in pool if p["question"] not in used_questions]
