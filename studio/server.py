@@ -1337,6 +1337,12 @@ def generate_community_polls():
     return community.ensure_daily_polls()
 
 
+@app.get("/api/research/trends")
+def get_research_trends():
+    from . import researcher
+    return researcher.get_intelligence()
+
+
 @app.get("/api/settings")
 def get_settings():
     return accounts.public_settings()

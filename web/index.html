@@ -1964,6 +1964,55 @@ function communityPollsCard(polls) {
     </div></div>`;
 }
 
+function researchIntelligenceCard(res) {
+  if (!res || !res.hot_leads) return "";
+  const gtaLeads = res.hot_leads.gta || [];
+  const ffLeads = res.hot_leads.freefire || [];
+  const topics = res.trending_topics || [];
+  if (!gtaLeads.length && !ffLeads.length) return "";
+  return `<div class="card" style="margin-top:16px"><div class="card-head"><div><h2>Trend Intelligence & Tomorrow's Scout Leads</h2><p class="sub">Autonomous idle-time research: tracking viral breakout velocity & upcoming events for tomorrow</p></div>
+    <span class="pill ok"><span class="dot"></span>Scout Active</span></div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+      ${topics.map(t => `<span class="pill" style="font-size:12px;background:var(--frame-2);border:1px solid var(--frame-border)"><b>${esc(t.topic)}</b> · <span style="color:var(--brand)">${esc(t.momentum)}</span></span>`).join("")}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:16px">
+      <div style="background:var(--frame-2);border-radius:12px;padding:14px;border:1px solid var(--frame-border)">
+        <h3 style="font-size:14px;font-weight:700;margin:0 0 10px;color:var(--text);display:flex;align-items:center;justify-content:space-between">
+          <span>🚗 Top GTA Trend Leads</span>
+          <span class="pill" style="font-size:11px">${gtaLeads.length} leads</span>
+        </h3>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${gtaLeads.slice(0, 3).map(l => `
+            <div style="background:var(--frame);padding:8px 10px;border-radius:8px;border:1px solid var(--frame-border)">
+              <div style="font-size:13px;font-weight:600;margin-bottom:4px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(l.title)}">${esc(l.title)}</div>
+              <div style="font-size:11px;color:var(--frame-dim);display:flex;justify-content:space-between">
+                <span>${esc(l.channel)}</span>
+                <span>🔥 ${(l.views).toLocaleString()} views (${l.velocity.toLocaleString()} velocity)</span>
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+      <div style="background:var(--frame-2);border-radius:12px;padding:14px;border:1px solid var(--frame-border)">
+        <h3 style="font-size:14px;font-weight:700;margin:0 0 10px;color:var(--text);display:flex;align-items:center;justify-content:space-between">
+          <span>🔥 Top Free Fire Trend Leads</span>
+          <span class="pill" style="font-size:11px">${ffLeads.length} leads</span>
+        </h3>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${ffLeads.slice(0, 3).map(l => `
+            <div style="background:var(--frame);padding:8px 10px;border-radius:8px;border:1px solid var(--frame-border)">
+              <div style="font-size:13px;font-weight:600;margin-bottom:4px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(l.title)}">${esc(l.title)}</div>
+              <div style="font-size:11px;color:var(--frame-dim);display:flex;justify-content:space-between">
+                <span>${esc(l.channel)}</span>
+                <span>⚡ ${(l.views).toLocaleString()} views (${l.velocity.toLocaleString()} velocity)</span>
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    </div></div>`;
+}
+
 function drawOverview() {
   const o = S.overview, box = $("#ov"); if (!o || !box) return;
   const sum = k => o.creators.reduce((a, r) => a + r[k], 0);
@@ -1985,6 +2034,7 @@ function drawOverview() {
       ${aiCard()}
     </div>
     ${communityPollsCard(o.polls)}
+    ${researchIntelligenceCard(o.research)}
     ${steps.length ? `<div class="card"><div class="card-head"><div><h2>Next steps</h2><p class="sub">Finish setting up PeakCut</p></div></div>
       <div class="steps across">${steps.map((x, i) => `<button class="step" data-act="step" data-to="${esc(x[2])}"><span class="n">${i + 1}</span><span><b>${esc(x[0])}</b><span class="d">${esc(x[1])}</span></span>${ic("arrowr")}</button>`).join("")}</div></div>` : ""}
     <div class="card"><div class="card-head"><div><h2>Creators</h2><p class="sub">Each creator's status and results</p></div></div>

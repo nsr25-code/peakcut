@@ -571,8 +571,14 @@ def overview() -> dict:
         polls_data = community.get_polls()
     except Exception:
         polls_data = {"channels": {}}
+    try:
+        from . import researcher
+        research_data = researcher.get_intelligence()
+    except Exception:
+        research_data = {}
     return {"paused": accounts.settings()["paused"], "creators": rows, "posts": show, "daily": daily,
-            "alerts": alerts.configured(), "recording": len(live.active_mine()), "polls": polls_data}
+            "alerts": alerts.configured(), "recording": len(live.active_mine()), "polls": polls_data,
+            "research": research_data}
 
 
 def digest_text() -> str:

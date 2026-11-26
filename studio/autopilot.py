@@ -478,22 +478,39 @@ def check_and_queue():
         elif c == "freefire" and not ff_buffer_full:
             queue_order.append("freefire")
 
+    if not queue_order:
+        try:
+            from . import researcher
+            researcher.scout_idle_trends()
+        except Exception as e:
+            print(f"[Researcher] Scouting error: {e}", flush=True)
+        return
+
     for target in queue_order:
         if target == "freefire":
             ff_creator = ensure_freefire_creator()
             candidates = []
-            for ch in FREEFIRE_TARGET_CHANNELS:
-                videos = fetch_channel_videos(ch["url"], game_type="freefire", limit=3)
-                for v in videos:
-                    if v["id"] not in processed:
-                        v["source_label"] = ch["name"]
-                        candidates.append(v)
-            for q in FREEFIRE_SEARCH_QUERIES:
-                videos = fetch_search_videos(q, game_type="freefire", limit=3)
-                for v in videos:
-                    if v["id"] not in processed:
-                        v["source_label"] = v.get("channel") or "Global Search"
-                        candidates.append(v)
+            try:
+                from . import researcher
+                for l in researcher.get_top_leads("freefire", limit=3):
+                    if l["id"] not in processed:
+                        l["source_label"] = "Trend Scout Intelligence"
+                        candidates.append(l)
+            except Exception:
+                pass
+            if not candidates:
+                for ch in FREEFIRE_TARGET_CHANNELS:
+                    videos = fetch_channel_videos(ch["url"], game_type="freefire", limit=3)
+                    for v in videos:
+                        if v["id"] not in processed:
+                            v["source_label"] = ch["name"]
+                            candidates.append(v)
+                for q in FREEFIRE_SEARCH_QUERIES:
+                    videos = fetch_search_videos(q, game_type="freefire", limit=3)
+                    for v in videos:
+                        if v["id"] not in processed:
+                            v["source_label"] = v.get("channel") or "Global Search"
+                            candidates.append(v)
 
             if candidates:
                 candidates.sort(key=freefire_public_demand_score, reverse=True)
@@ -513,7 +530,7 @@ def check_and_queue():
                             "layout": "blur",
                             "captions": True,
                             "min_len": 20,
-                            "max_len": 60,
+                            "max_len": 35,
                             "max_clips": 4,
                             "auto_clips": True,
                             "game": "Garena Free Fire",
@@ -532,18 +549,27 @@ def check_and_queue():
         elif target == "gta":
             gta_creator = ensure_gta_creator()
             candidates = []
-            for ch in GTA_TARGET_CHANNELS:
-                videos = fetch_channel_videos(ch["url"], game_type="gta", limit=3)
-                for v in videos:
-                    if v["id"] not in processed:
-                        v["source_label"] = ch["name"]
-                        candidates.append(v)
-            for q in GTA_SEARCH_QUERIES:
-                videos = fetch_search_videos(q, game_type="gta", limit=3)
-                for v in videos:
-                    if v["id"] not in processed:
-                        v["source_label"] = v.get("channel") or "Global Search"
-                        candidates.append(v)
+            try:
+                from . import researcher
+                for l in researcher.get_top_leads("gta", limit=3):
+                    if l["id"] not in processed:
+                        l["source_label"] = "Trend Scout Intelligence"
+                        candidates.append(l)
+            except Exception:
+                pass
+            if not candidates:
+                for ch in GTA_TARGET_CHANNELS:
+                    videos = fetch_channel_videos(ch["url"], game_type="gta", limit=3)
+                    for v in videos:
+                        if v["id"] not in processed:
+                            v["source_label"] = ch["name"]
+                            candidates.append(v)
+                for q in GTA_SEARCH_QUERIES:
+                    videos = fetch_search_videos(q, game_type="gta", limit=3)
+                    for v in videos:
+                        if v["id"] not in processed:
+                            v["source_label"] = v.get("channel") or "Global Search"
+                            candidates.append(v)
 
             if candidates:
                 candidates.sort(key=gta_public_demand_score, reverse=True)
@@ -563,7 +589,7 @@ def check_and_queue():
                             "layout": "blur",
                             "captions": True,
                             "min_len": 20,
-                            "max_len": 60,
+                            "max_len": 35,
                             "max_clips": 4,
                             "auto_clips": True,
                             "game": "Grand Theft Auto V",
