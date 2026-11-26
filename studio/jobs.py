@@ -956,7 +956,7 @@ def _worker(quick_only=False):
             except Exception:  # noqa: BLE001
                 traceback.print_exc()
             continue
-        job = _jobs.get(a)
+        job = get(a) or _jobs.get(a)
         if not job:
             if kind == "job":
                 _q.done()
