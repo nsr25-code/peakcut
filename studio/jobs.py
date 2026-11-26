@@ -278,7 +278,10 @@ def get(jid):
     job = _jobs.get(jid)
     if not job and jid:
         try:
-            uid = ctx.uid()
+            try:
+                uid = ctx.uid()
+            except Exception:
+                uid = auth.local_user().id if hasattr(auth, "local_user") else "u_local"
             d = config.USERS_DIR / uid
             found = list((d / "jobs" / jid).glob("job.json")) + list((d / "creators").glob(f"*/videos/{jid}/job.json"))
             if found and found[0].is_file():
@@ -286,7 +289,11 @@ def get(jid):
                 job = _jobs.get(jid)
         except Exception:
             pass
-    return job if job and job["user"] == ctx.uid() else None
+    try:
+        current_uid = ctx.uid()
+        return job if job and job["user"] == current_uid else None
+    except Exception:
+        return job
 
 
 def busy_count() -> int:
